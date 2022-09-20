@@ -185,60 +185,6 @@ pub mod collections {
         }
     }
 
-    pub mod axie_sale {
-        use mongodb::bson::DateTime;
-        use mongodb::Collection;
-        use serde::{Deserialize, Serialize};
-
-        use crate::mongo::collections::transaction_pool::Pool;
-        use crate::mongo::collections::{Address, Block};
-        use crate::mongo::{index_model, IndexModel, Indexable};
-
-        #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-        pub struct Sale {
-            pub seller: Address,
-            pub buyer: Address,
-            pub price: String,
-            pub seller_received: String,
-            pub token: Address,
-            pub token_id: String,
-            pub transaction_id: String,
-            pub created_at: DateTime,
-            pub block: Block,
-        }
-
-        pub struct SaleProvider {
-            pub(crate) collection: Collection<Sale>,
-        }
-
-        impl SaleProvider {
-            pub fn new(collection: Collection<Sale>) -> SaleProvider {
-                SaleProvider { collection }
-            }
-
-            pub(crate) fn get_pool(&self) -> Pool<Sale> {
-                Pool::new(self.collection.to_owned())
-            }
-        }
-
-        impl Indexable for SaleProvider {
-            fn index_model(&self) -> Vec<IndexModel> {
-                vec![
-                    index_model("seller", false),
-                    index_model("buyer", false),
-                    index_model("token_id", false),
-                    index_model("token", false),
-                    index_model("created_at", false),
-                    index_model("transaction_id", true),
-                ]
-            }
-
-            fn index_setup_key(&self) -> &'static str {
-                "setup.erc_sales"
-            }
-        }
-    }
-
     pub mod transaction {
         use mongodb::bson::doc;
         use mongodb::Collection;
@@ -278,74 +224,6 @@ pub mod collections {
 
             fn index_setup_key(&self) -> &'static str {
                 "setup.transactions"
-            }
-        }
-    }
-
-    pub mod erc1155_transfer {
-        use mongodb::Collection;
-        use serde::{Deserialize, Serialize};
-        use sha2::digest::Update;
-        use sha2::{Digest, Sha256};
-
-        use crate::mongo::collections::transaction_pool::Pool;
-        use crate::mongo::collections::{Address, Block};
-        use crate::mongo::{index_model, IndexModel, Indexable};
-
-        #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-        pub struct ERC1155Transfer {
-            pub token: Address,
-            pub operator: Address,
-            pub from: Address,
-            pub to: Address,
-            pub token_id: String,
-            pub value: String,
-            pub block: Block,
-            pub transaction_id: String,
-            pub log_index: String,
-            pub log_id: String,
-        }
-
-        pub struct Erc1155TransferProvider {
-            pub collection: Collection<ERC1155Transfer>,
-        }
-
-        impl Indexable for Erc1155TransferProvider {
-            fn index_model(&self) -> Vec<IndexModel> {
-                vec![
-                    index_model("log_id", true),
-                    index_model("operator", false),
-                    index_model("from", false),
-                    index_model("to", false),
-                    index_model("token_id", false),
-                    index_model("value", false),
-                    index_model("block", false),
-                    index_model("transaction_id", false),
-                ]
-            }
-
-            fn index_setup_key(&self) -> &'static str {
-                "setup.erc1155_transfers"
-            }
-        }
-
-        impl Erc1155TransferProvider {
-            pub fn new(collection: Collection<ERC1155Transfer>) -> Erc1155TransferProvider {
-                Erc1155TransferProvider { collection }
-            }
-
-            pub(crate) fn get_pool(&self) -> Pool<ERC1155Transfer> {
-                Pool::new(self.collection.to_owned())
-            }
-        }
-
-        impl ERC1155Transfer {
-            pub fn get_transfer_id(hash: &str, index: &str) -> String {
-                let mut hasher = Sha256::new();
-                Update::update(&mut hasher, hash.as_bytes());
-                Update::update(&mut hasher, &[b'-']);
-                Update::update(&mut hasher, index.as_bytes());
-                format!("{:x}", hasher.finalize())
             }
         }
     }
@@ -539,8 +417,6 @@ pub async fn connect(hostname: &str, database: &str) -> Database {
     let wallets = WalletProvider::new(db.collection::<Wallet>("wallets"));
     let transactions = TransactionProvider::new(db.collection::<Transaction>("transactions"));
     let erc_transfers = ErcTransferProvider::new(db.collection::<ERCTransfer>("erc_transfers"));
-    let erc1155_transfers =
-        Erc1155TransferProvider::new(db.collection::<ERC1155Transfer>("erc1155_transfers"));
     let settings = SettingsProvider::new(db.collection::<Settings>("settings"));
     let erc_sales = SaleProvider::new(db.collection::<Sale>("erc721_sales"));
 
@@ -550,7 +426,6 @@ pub async fn connect(hostname: &str, database: &str) -> Database {
         settings,
         erc_sales,
         erc_transfers,
-        erc1155_transfers,
         _client: client,
         _database: db,
     };
@@ -579,14 +454,6 @@ impl Database {
         let create_erc_transfers = match self
             .settings
             .get(self.erc_transfers.index_setup_key())
-            .await
-        {
-            None => true,
-            Some(_) => false,
-        };
-        let create_erc1155_transfers = match self
-            .settings
-            .get(self.erc1155_transfers.index_setup_key())
             .await
         {
             None => true,
@@ -671,25 +538,6 @@ impl Database {
             }
             self.settings
                 .set(self.erc_transfers.index_setup_key(), "1")
-                .await
-                .expect("Failed to complete setup!");
-        }
-        if create_erc1155_transfers {
-            for model in self.erc1155_transfers.index_model() {
-                self.erc1155_transfers
-                    .collection
-                    .create_index(
-                        mongodb::IndexModel::builder()
-                            .keys(model.model)
-                            .options(model.options)
-                            .build(),
-                        None,
-                    )
-                    .await
-                    .expect("Failed to create erc1155_transfer index!");
-            }
-            self.settings
-                .set(self.erc1155_transfers.index_setup_key(), "1")
                 .await
                 .expect("Failed to complete setup!");
         }
