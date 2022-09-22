@@ -240,7 +240,7 @@ async fn main() -> mongodb::error::Result<()> {
     let collection = client.database("ronin-indexer").collection::<TransferOnly>("0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5");
     let find_options = FindOptions::builder().sort(doc! { "block": -1 }).limit(1).build();
     let details = collection.find(None, find_options).await?;
-    // current_block = details.deserialize_current().unwrap().block;
+    current_block = details.deserialize_current().unwrap().block;
 
 
     loop {
