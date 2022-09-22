@@ -7,7 +7,7 @@ use thousands::Separable;
 use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use mongodb::{bson::doc, options::ClientOptions, Client, bson::Document, bson::to_document};
+use mongodb::{bson::doc, options::ClientOptions, Client, bson::Document, bson::to_document, bson::DateTime};
 use std::io::{Error, ErrorKind};
 use dotenv::dotenv;
 
@@ -49,7 +49,8 @@ pub struct Transfer {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TransferOnly {
-    ts: u64,
+    ts: DateTime,
+    block: u64,
     from: String,
     to: String,
     value: String,
@@ -118,8 +119,10 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                         
                         
                         let collection = client.database("ronin-indexer").collection::<Document>(&tx_to.clone());
+                        let t = timestamp as i64;
                         let transfer = TransferOnly {
-                            ts: timestamp,
+                            ts: DateTime::from_millis(t * 1000),
+                            block: current_block,
                             from,
                             to,
                             value
