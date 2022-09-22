@@ -132,9 +132,6 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                         let doc = to_document(&transfer).expect("Error");
                         collection.insert_one(doc, None).await;
 
-                        println!("Inserted");
-
-
                     }
                 }
             };
@@ -233,7 +230,7 @@ async fn main() -> mongodb::error::Result<()> {
         anonymous: false,
     };
 
-    let at_once = 50;
+    let at_once = 150;
 
     let mut current_block = 15382480u64;
 
@@ -242,6 +239,7 @@ async fn main() -> mongodb::error::Result<()> {
     let details = collection.find(None, find_options).await?;
     current_block = details.deserialize_current().unwrap().block;
 
+    println!("Starting at {}", current_block);
 
     loop {
         let mut calls = Vec::new();
