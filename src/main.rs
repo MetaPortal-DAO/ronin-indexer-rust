@@ -10,6 +10,7 @@ use web3::Web3;
 use mongodb::{bson::doc, options::ClientOptions, Client, bson::Document, bson::to_document, bson::DateTime};
 use std::io::{Error, ErrorKind};
 use dotenv::dotenv;
+use futures::future::join_all;
 
 const ERC_TRANSFER_TOPIC: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -137,7 +138,8 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                     }
                 }
             };
-        }        
+        }
+    
 }
 
 #[tokio::main]
@@ -231,14 +233,32 @@ async fn main() -> mongodb::error::Result<()> {
         anonymous: false,
     };
 
-    let mut stop = false;
     let mut current_block = 15382480u64;
-    let mut file_counter = 1u64;
-    let mut transfer_storage: Vec<Transfer> = vec![];
-
     
     loop {
-        scrape_block(&provider, current_block, &contracts_of_interest, &map, &event, &client).await;
-        current_block += 1;
+        let mut calls = Vec::new();
+
+        let chain_head_block =  Web3::new(&provider)
+            .eth()
+            .block_number()
+            .await
+            .expect("Failed to retrieve head block number from chain!").as_u64() - 200;
+
+        if chain_head_block < current_block {
+            // break;
+        }
+        
+        loop {
+            let starting_block = current_block;
+            let mut call = scrape_block(&provider, current_block, &contracts_of_interest, &map, &event, &client);
+            calls.push(call);
+            current_block=current_block+1;
+
+            if (current_block > starting_block + 150){
+                break;
+            }
+        }
+
+        join_all(calls).await;
     }
 }

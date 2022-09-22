@@ -328,6 +328,7 @@ name = "erc20"
 version = "0.1.0"
 dependencies = [
  "dotenv",
+ "futures",
  "mongodb",
  "serde",
  "serde_json",
