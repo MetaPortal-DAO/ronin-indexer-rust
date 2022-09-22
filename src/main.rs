@@ -7,7 +7,7 @@ use thousands::Separable;
 use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use mongodb::{bson::doc, options::ClientOptions, Client};
+use mongodb::{bson::doc, options::ClientOptions, Client, bson::Document, bson::to_document};
 use std::io::{Error, ErrorKind};
 use dotenv::dotenv;
 
@@ -47,11 +47,20 @@ pub struct Transfer {
     timestamp: u64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TransferOnly {
+    ts: u64,
+    from: String,
+    to: String,
+    value: String,
+}
+
+
 fn output_path(filename: String) -> String {
     [OUTPUT_PATH_PREFIX.to_string(), filename].join("/")
 }
 
-async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_interest: &[&str; 3], map: &HashMap<&str, Contract>, event: &Event ) {
+async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_interest: &[&str; 3], map: &HashMap<&str, Contract>, event: &Event, client: &Client ) {
 
     let web3 = Web3::new(provider);
 
@@ -68,7 +77,7 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
             .unwrap_or_else(|_| panic!("Failed to load block {} from provider!", current_block))
             .unwrap_or_else(|| panic!("Failed to unwrap block {} from result!", current_block));
 
-        let timestamp = block.timestamp.as_u64() * 1000;
+        let timestamp = block.timestamp.as_u64();
 
         let contracts: Vec<&str> = map
             .values()
@@ -107,8 +116,20 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                         let to = to_string(&data.params[1].value.to_string());
                         let value = to_string(&data.params[2].value.to_string());
                         
+                        
+                        let collection = client.database("ronin-indexer").collection::<Document>(&tx_to.clone());
+                        let transfer = TransferOnly {
+                            ts: timestamp,
+                            from,
+                            to,
+                            value
+                        };
 
-                        println!("{} {} {} {} {:>12}", tx_to.clone(), from, to, value, timestamp);
+                        let doc = to_document(&transfer).expect("Error");
+                        collection.insert_one(doc, None).await;
+
+                        println!("Inserted");
+
 
                     }
                 }
@@ -143,13 +164,6 @@ async fn main() -> mongodb::error::Result<()> {
         .await?;
     println!("Connected successfully.");
 
-
-    println!("Databases:");
-    for name in client.list_database_names(None, None).await? {
-        println!("- {}", name);
-    }
-
-
     let mut map = HashMap::new();
 
 
@@ -159,6 +173,8 @@ async fn main() -> mongodb::error::Result<()> {
         "0xed4a9f48a62fb6fdcfb45bb00c9f61d1a436e58c",
         "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
     ];
+
+
 
     map.insert(
         "0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5",
@@ -219,7 +235,7 @@ async fn main() -> mongodb::error::Result<()> {
 
     
     loop {
-        scrape_block(&provider, current_block, &contracts_of_interest, &map, &event).await;
+        scrape_block(&provider, current_block, &contracts_of_interest, &map, &event, &client).await;
         current_block += 1;
     }
 }
