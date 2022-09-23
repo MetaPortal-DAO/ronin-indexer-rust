@@ -235,36 +235,45 @@ async fn main() -> mongodb::error::Result<()> {
 
     let collection = client.database("ronin-indexer").collection::<TransferOnly>("0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5");
     let find_options = FindOptions::builder().sort(doc! { "block": -1 }).limit(1).build();
-    let details = collection.find(None, find_options).await?;
-    current_block = details.deserialize_current().unwrap().block;
+    let mut details = collection.find(None, find_options).await?;
+
+    while (details.advance().await?){
+        current_block = details.deserialize_current().unwrap().block;
+    }
 
     println!("Starting at {}", current_block);
 
-    // loop {
-    //     let mut calls = Vec::new();
+    loop {
+        let mut calls = Vec::new();
 
-    //     if current_block > 15382480 {
-    //         break;
-    //     }
+        let chain_head_block =  Web3::new(&provider)
+            .eth()
+            .block_number()
+            .await
+            .expect("Failed to retrieve head block number from chain!").as_u64() - (at_once + 50);
 
-    //     let starting_block = current_block;
+        if chain_head_block < current_block {
+            break;
+        }
 
-    //     loop {
+        let starting_block = current_block;
+
+        loop {
 
 
-    //         let mut call = scrape_block(&provider, current_block, &contracts_of_interest, &map, &event, &client);
-    //         calls.push(call);
+            let mut call = scrape_block(&provider, current_block, &contracts_of_interest, &map, &event, &client);
+            calls.push(call);
 
-    //         current_block=current_block+1;
+            current_block=current_block+1;
 
-    //         if (current_block > starting_block + at_once) {
-    //             break;
-    //         }
-    //     }
+            if (current_block > starting_block + at_once) {
+                break;
+            }
+        }
 
-    //     join_all(calls).await;
-    //     println!("Completed a thread: {}", current_block);
-    // }
+        join_all(calls).await;
+        println!("Completed a thread: {}", current_block);
+    }
 
     Ok(())
 
