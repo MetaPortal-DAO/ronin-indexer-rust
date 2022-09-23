@@ -15,8 +15,6 @@ use futures::future::join_all;
 const ERC_TRANSFER_TOPIC: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-const OUTPUT_PATH_PREFIX: &str = "output";
-const MAX_TRANSFER_PER_FILE: usize = 15000;
 
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
@@ -26,10 +24,6 @@ pub struct Contract {
     pub address: &'static str,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Output {
-    transfers: Vec<Transfer>,
-}
 pub fn to_string<T: serde::Serialize>(request: &T) -> String {
     web3::helpers::to_string(request).replace('\"', "")
 }
@@ -57,10 +51,6 @@ pub struct TransferOnly {
     value: String,
 }
 
-
-fn output_path(filename: String) -> String {
-    [OUTPUT_PATH_PREFIX.to_string(), filename].join("/")
-}
 
 async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_interest: &[&str; 3], map: &HashMap<&str, Contract>, event: &Event, client: &Client ) {
 
@@ -91,13 +81,17 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
             if let Some(tx_to) = tx.to {
                 let tx_to = to_string(&tx_to);
                 if contracts_of_interest.contains(&tx_to.as_str()) {
-                    let receipt = web3
+                    let action = web3
                         .eth()
                         .transaction_receipt(tx.hash)
                         .await
-                        .unwrap()
                         .unwrap();
-                    let transfer_log = receipt
+
+
+                    if (action.is_none() == false) {
+                        let receipt = action.unwrap();
+
+                        let transfer_log = receipt
                         .logs
                         .iter()
                         .filter(|x| {
@@ -106,33 +100,37 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                         })
                         .collect::<Vec<&Log>>();
 
-                    for transfer in transfer_log {
-                        let data = event
-                            .parse_log(RawLog {
-                                topics: transfer.to_owned().topics,
-                                data: transfer.to_owned().data.0,
-                            })
-                            .unwrap();
+                        for transfer in transfer_log {
+                            let data = event
+                                .parse_log(RawLog {
+                                    topics: transfer.to_owned().topics,
+                                    data: transfer.to_owned().data.0,
+                                })
+                                .unwrap();
 
-                        let from = to_string(&data.params[0].value.to_string());
-                        let to = to_string(&data.params[1].value.to_string());
-                        let value = to_string(&data.params[2].value.to_string());
-                        
-                        
-                        let collection = client.database("ronin-indexer").collection::<Document>(&tx_to.clone());
-                        let t = timestamp as i64;
-                        let transfer = TransferOnly {
-                            ts: DateTime::from_millis(t * 1000),
-                            block: current_block,
-                            from,
-                            to,
-                            value
-                        };
+                            let from = to_string(&data.params[0].value.to_string());
+                            let to = to_string(&data.params[1].value.to_string());
+                            let value = to_string(&data.params[2].value.to_string());
+                            
+                            
+                            let collection = client.database("ronin-indexer").collection::<Document>(&tx_to.clone());
+                            let t = timestamp as i64;
+                            let transfer = TransferOnly {
+                                ts: DateTime::from_millis(t * 1000),
+                                block: current_block,
+                                from,
+                                to,
+                                value
+                            };
 
-                        let doc = to_document(&transfer).expect("Error");
-                        collection.insert_one(doc, None).await;
+                            let doc = to_document(&transfer).expect("Error");
+                            collection.insert_one(doc, None).await;
+
+                        }
 
                     }
+
+                    
                 }
             };
         }
@@ -150,9 +148,6 @@ async fn main() -> mongodb::error::Result<()> {
         .await
         .unwrap();
 
-    if !std::path::Path::new(OUTPUT_PATH_PREFIX).exists() {
-        std::fs::create_dir_all(OUTPUT_PATH_PREFIX).unwrap();
-    }
 
     let mut client_options =
         ClientOptions::parse(MONGODB_URL)
@@ -231,7 +226,7 @@ async fn main() -> mongodb::error::Result<()> {
     };
 
     let at_once = 150;
-    let mut current_block = 0u64;
+    let mut current_block = 750u64;
 
     let collection = client.database("ronin-indexer").collection::<TransferOnly>("0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5");
     let find_options = FindOptions::builder().sort(doc! { "block": -1 }).limit(1).build();
