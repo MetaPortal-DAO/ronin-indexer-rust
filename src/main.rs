@@ -87,9 +87,10 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                         .await
                         .unwrap();
 
-
+                    println!("{}", current_block);
                     if (action.is_none() == false) {
                         let receipt = action.unwrap();
+                        println!("Not null");
 
                         let transfer_log = receipt
                         .logs
@@ -128,6 +129,8 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
 
                         }
 
+                    } else {
+                        println!("Null action");
                     }
 
                     
@@ -167,7 +170,7 @@ async fn main() -> mongodb::error::Result<()> {
 
     let contracts_of_interest = [
         "0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5",
-        "0xed4a9f48a62fb6fdcfb45bb00c9f61d1a436e58c",
+        "97a9107c1793bc407d6f527b77e7fff4d812bece",
         "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
     ];
 
@@ -184,12 +187,12 @@ async fn main() -> mongodb::error::Result<()> {
     );
 
     map.insert(
-        "0xed4a9f48a62fb6fdcfb45bb00c9f61d1a436e58c",
+        "97a9107c1793bc407d6f527b77e7fff4d812bece",
         Contract {
             name: "AXS",
             decimals: 18,
             erc: ContractType::ERC20,
-            address: "0xed4a9f48a62fb6fdcfb45bb00c9f61d1a436e58c",
+            address: "97a9107c1793bc407d6f527b77e7fff4d812bece",
         },
     );
 
@@ -226,7 +229,8 @@ async fn main() -> mongodb::error::Result<()> {
     };
 
     let at_once = 150;
-    let mut current_block = 750u64;
+
+    let mut current_block = 4702878u64;
 
     let collection = client.database("ronin-indexer").collection::<TransferOnly>("0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5");
     let find_options = FindOptions::builder().sort(doc! { "block": -1 }).limit(1).build();
@@ -267,7 +271,7 @@ async fn main() -> mongodb::error::Result<()> {
         }
 
         join_all(calls).await;
-        println!("Completed a thread: {}", current_block);
+        // println!("Completed a thread: {}", current_block);
     }
 
     Ok(())
