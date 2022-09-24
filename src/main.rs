@@ -78,16 +78,19 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
             .collect();
 
         for tx in block.transactions {
+            
             if let Some(tx_to) = tx.to {
                 let tx_to = to_string(&tx_to);
+                // println!("{} {} {} {} {}", current_block, to_string(&tx.from), tx_to, to_string(&tx.value), tx.hash);
+
                 if contracts_of_interest.contains(&tx_to.as_str()) {
                     let action = web3
                         .eth()
                         .transaction_receipt(tx.hash)
                         .await
                         .unwrap();
+                    
 
-                    println!("{}", current_block);
                     if (action.is_none() == false) {
                         let receipt = action.unwrap();
                         println!("Not null");
@@ -130,7 +133,7 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                         }
 
                     } else {
-                        println!("Null action");
+                        println!("Null");
                     }
 
                     
@@ -230,7 +233,7 @@ async fn main() -> mongodb::error::Result<()> {
 
     let at_once = 150;
 
-    let mut current_block = 4702878u64;
+    let mut current_block = 15000000u64;
 
     let collection = client.database("ronin-indexer").collection::<TransferOnly>("0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5");
     let find_options = FindOptions::builder().sort(doc! { "block": -1 }).limit(1).build();
@@ -259,7 +262,6 @@ async fn main() -> mongodb::error::Result<()> {
 
         loop {
 
-
             let mut call = scrape_block(&provider, current_block, &contracts_of_interest, &map, &event, &client);
             calls.push(call);
 
@@ -271,7 +273,7 @@ async fn main() -> mongodb::error::Result<()> {
         }
 
         join_all(calls).await;
-        // println!("Completed a thread: {}", current_block);
+        println!("Completed a thread: {}", current_block);
     }
 
     Ok(())
