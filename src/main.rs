@@ -7,14 +7,16 @@ use thousands::Separable;
 use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use mongodb::{bson::doc, options::ClientOptions, Client, bson::Document, bson::to_document, bson::DateTime, options::FindOptions};
-use std::io::{Error, ErrorKind};
 use dotenv::dotenv;
 use futures::future::join_all;
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_dynamodb::{Client, Error};
+
+mod aws_utils;
+use aws_utils::TransferOnly;
 
 const ERC_TRANSFER_TOPIC: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-
 
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
@@ -42,14 +44,6 @@ pub struct Transfer {
     timestamp: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TransferOnly {
-    ts: DateTime,
-    block: u64,
-    from: String,
-    to: String,
-    value: String,
-}
 
 
 async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_interest: &[&str; 3], map: &HashMap<&str, Contract>, event: &Event, client: &Client ) {
@@ -69,8 +63,6 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
             .unwrap_or_else(|_| panic!("Failed to load block {} from provider!", current_block))
             .unwrap_or_else(|| panic!("Failed to unwrap block {} from result!", current_block));
 
-        let timestamp = block.timestamp.as_u64();
-
         let contracts: Vec<&str> = map
             .values()
             .filter(|c| c.erc == ERC20)
@@ -81,7 +73,6 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
             
             if let Some(tx_to) = tx.to {
                 let tx_to = to_string(&tx_to);
-                // println!("{} {} {} {} {}", current_block, to_string(&tx.from), tx_to, to_string(&tx.value), tx.hash);
 
                 if contracts_of_interest.contains(&tx_to.as_str()) {
                     let action = web3
@@ -93,7 +84,6 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
 
                     if (action.is_none() == false) {
                         let receipt = action.unwrap();
-                        println!("Not null");
 
                         let transfer_log = receipt
                         .logs
@@ -116,19 +106,19 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                             let to = to_string(&data.params[1].value.to_string());
                             let value = to_string(&data.params[2].value.to_string());
                             
-                            
-                            let collection = client.database("ronin-indexer").collection::<Document>(&tx_to.clone());
-                            let t = timestamp as i64;
                             let transfer = TransferOnly {
-                                ts: DateTime::from_millis(t * 1000),
-                                block: current_block,
+                                ts: block.timestamp.to_string(),
+                                block: current_block.to_string(),
                                 from,
                                 to,
                                 value
                             };
 
-                            let doc = to_document(&transfer).expect("Error");
-                            collection.insert_one(doc, None).await;
+                            aws_utils::add_item(&client, &tx_to.clone(), transfer).await;
+                            println!("Written in the table");
+
+                            // let doc = to_document(&transfer).expect("Error");
+                            // collection.insert_one(doc, None).await;
 
                         }
 
@@ -143,41 +133,30 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
     
 }
 
+
+
 #[tokio::main]
-async fn main() -> mongodb::error::Result<()> {
+async fn main() -> Result<(), Error>  {
 
     dotenv().ok();
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
-    let MONGODB_URL = std::env::var("MONGODB_URL").expect("MONGODB_URL must be set.");
+
+    let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
+    let config = aws_config::from_env().region(region_provider).load().await;
+    let client = Client::new(&config);
+
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
         .unwrap();
 
-
-    let mut client_options =
-        ClientOptions::parse(MONGODB_URL)
-            .await?;
-
-    let client = Client::with_options(client_options)?;
-
-    client
-        .database("admin")
-        .run_command(doc! {"ping": 1}, None)
-        .await?;
-    println!("Connected successfully.");
-
     let mut map = HashMap::new();
-
-
 
     let contracts_of_interest = [
         "0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5",
         "97a9107c1793bc407d6f527b77e7fff4d812bece",
         "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
     ];
-
-
 
     map.insert(
         "0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5",
@@ -230,20 +209,24 @@ async fn main() -> mongodb::error::Result<()> {
         ],
         anonymous: false,
     };
+    
 
     let at_once = 150;
 
     let mut current_block = 15000000u64;
 
-    let collection = client.database("ronin-indexer").collection::<TransferOnly>("0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5");
-    let find_options = FindOptions::builder().sort(doc! { "block": -1 }).limit(1).build();
-    let mut details = collection.find(None, find_options).await?;
-
-    while (details.advance().await?){
-        current_block = details.deserialize_current().unwrap().block;
+    for element in contracts_of_interest {
+        let res = aws_utils::does_table_exist(&client, element).await.unwrap();
+        
+        if (res == false) {
+            aws_utils::create_table(&client, &element, "id").await;
+        } else {
+            println!("Table {} already exists", element);
+        }
     }
 
-    println!("Starting at {}", current_block);
+
+
 
     loop {
         let mut calls = Vec::new();
