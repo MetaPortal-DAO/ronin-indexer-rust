@@ -1,8 +1,8 @@
-use aws_sdk_dynamodb::{Client, Error};
 use aws_sdk_dynamodb::model::{
     AttributeDefinition, AttributeValue, KeySchemaElement, KeyType, ProvisionedThroughput,
     ScalarAttributeType, Select, TableStatus,
 };
+use aws_sdk_dynamodb::{Client, Error};
 use aws_smithy_http::result::SdkError;
 
 use serde::{Deserialize, Serialize};
@@ -80,7 +80,6 @@ pub async fn add_item(
     let from = AttributeValue::S(item.from);
     let to = AttributeValue::S(item.to);
     let value = AttributeValue::S(item.value);
-
 
     match client
         .put_item()
