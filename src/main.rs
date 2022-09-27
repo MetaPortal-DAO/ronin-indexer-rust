@@ -1,16 +1,16 @@
 use crate::ContractType::ERC20;
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_dynamodb::{Client, Error};
+use dotenv::dotenv;
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
-use web3::transports::WebSocket;
 use std::collections::HashMap;
 use std::env;
 use thousands::Separable;
 use web3::ethabi::{Event, EventParam, ParamType, RawLog};
+use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use dotenv::dotenv;
-use futures::future::join_all;
-use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_dynamodb::{Client, Error};
 
 mod aws_utils;
 use aws_utils::TransferOnly;
@@ -44,48 +44,46 @@ pub struct Transfer {
     timestamp: u64,
 }
 
-
-
-async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_interest: &[&str; 3], map: &HashMap<&str, Contract>, event: &Event, client: &Client ) {
-
+async fn scrape_block(
+    provider: &WebSocket,
+    current_block: u64,
+    contracts_of_interest: &[&str; 3],
+    map: &HashMap<&str, Contract>,
+    event: &Event,
+    client: &Client,
+) {
     let web3 = Web3::new(provider);
 
     let chain_head_block = web3
-            .eth()
-            .block_number()
-            .await
-            .expect("Failed to retrieve head block number from chain!");
+        .eth()
+        .block_number()
+        .await
+        .expect("Failed to retrieve head block number from chain!");
 
-        let block = web3
-            .eth()
-            .block_with_txs(BlockId::Number(BlockNumber::from(current_block as u64)))
-            .await
-            .unwrap_or_else(|_| panic!("Failed to load block {} from provider!", current_block))
-            .unwrap_or_else(|| panic!("Failed to unwrap block {} from result!", current_block));
+    let block = web3
+        .eth()
+        .block_with_txs(BlockId::Number(BlockNumber::from(current_block as u64)))
+        .await
+        .unwrap_or_else(|_| panic!("Failed to load block {} from provider!", current_block))
+        .unwrap_or_else(|| panic!("Failed to unwrap block {} from result!", current_block));
 
-        let contracts: Vec<&str> = map
-            .values()
-            .filter(|c| c.erc == ERC20)
-            .map(|c| c.address)
-            .collect();
+    let contracts: Vec<&str> = map
+        .values()
+        .filter(|c| c.erc == ERC20)
+        .map(|c| c.address)
+        .collect();
 
-        for tx in block.transactions {
-            
-            if let Some(tx_to) = tx.to {
-                let tx_to = to_string(&tx_to);
+    for tx in block.transactions {
+        if let Some(tx_to) = tx.to {
+            let tx_to = to_string(&tx_to);
 
-                if contracts_of_interest.contains(&tx_to.as_str()) {
-                    let action = web3
-                        .eth()
-                        .transaction_receipt(tx.hash)
-                        .await
-                        .unwrap();
-                    
+            if contracts_of_interest.contains(&tx_to.as_str()) {
+                let action = web3.eth().transaction_receipt(tx.hash).await.unwrap();
 
-                    if (action.is_none() == false) {
-                        let receipt = action.unwrap();
+                if (action.is_none() == false) {
+                    let receipt = action.unwrap();
 
-                        let transfer_log = receipt
+                    let transfer_log = receipt
                         .logs
                         .iter()
                         .filter(|x| {
@@ -94,57 +92,48 @@ async fn scrape_block(provider: &WebSocket, current_block: u64, contracts_of_int
                         })
                         .collect::<Vec<&Log>>();
 
-                        for transfer in transfer_log {
-                            let data = event
-                                .parse_log(RawLog {
-                                    topics: transfer.to_owned().topics,
-                                    data: transfer.to_owned().data.0,
-                                })
-                                .unwrap();
+                    for transfer in transfer_log {
+                        let data = event
+                            .parse_log(RawLog {
+                                topics: transfer.to_owned().topics,
+                                data: transfer.to_owned().data.0,
+                            })
+                            .unwrap();
 
-                            let from = to_string(&data.params[0].value.to_string());
-                            let to = to_string(&data.params[1].value.to_string());
-                            let value = to_string(&data.params[2].value.to_string());
-                            
-                            let transfer = TransferOnly {
-                                ts: block.timestamp.to_string(),
-                                block: current_block.to_string(),
-                                from,
-                                to,
-                                value
-                            };
+                        let from = to_string(&data.params[0].value.to_string());
+                        let to = to_string(&data.params[1].value.to_string());
+                        let value = to_string(&data.params[2].value.to_string());
 
-                            aws_utils::add_item(&client, &tx_to.clone(), transfer).await;
-                            println!("Written in the table");
+                        let transfer = TransferOnly {
+                            ts: block.timestamp.to_string(),
+                            block: current_block.to_string(),
+                            from,
+                            to,
+                            value,
+                        };
 
-                            // let doc = to_document(&transfer).expect("Error");
-                            // collection.insert_one(doc, None).await;
+                        aws_utils::add_item(&client, &tx_to.clone(), transfer).await;
+                        println!("Written in the table");
 
-                        }
-
-                    } else {
-                        println!("Null");
+                        // let doc = to_document(&transfer).expect("Error");
+                        // collection.insert_one(doc, None).await;
                     }
-
-                    
+                } else {
+                    println!("Null");
                 }
-            };
-        }
-    
+            }
+        };
+    }
 }
 
-
-
 #[tokio::main]
-async fn main() -> Result<(), Error>  {
-
+async fn main() -> Result<(), Error> {
     dotenv().ok();
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
 
     let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
     let config = aws_config::from_env().region(region_provider).load().await;
     let client = Client::new(&config);
-
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
@@ -209,7 +198,6 @@ async fn main() -> Result<(), Error>  {
         ],
         anonymous: false,
     };
-    
 
     let at_once = 150;
 
@@ -217,7 +205,7 @@ async fn main() -> Result<(), Error>  {
 
     for element in contracts_of_interest {
         let res = aws_utils::does_table_exist(&client, element).await.unwrap();
-        
+
         if (res == false) {
             aws_utils::create_table(&client, &element, "id").await;
         } else {
@@ -225,17 +213,16 @@ async fn main() -> Result<(), Error>  {
         }
     }
 
-
-
-
     loop {
         let mut calls = Vec::new();
 
-        let chain_head_block =  Web3::new(&provider)
+        let chain_head_block = Web3::new(&provider)
             .eth()
             .block_number()
             .await
-            .expect("Failed to retrieve head block number from chain!").as_u64() - (at_once + 50);
+            .expect("Failed to retrieve head block number from chain!")
+            .as_u64()
+            - (at_once + 50);
 
         if chain_head_block < current_block {
             break;
@@ -244,11 +231,17 @@ async fn main() -> Result<(), Error>  {
         let starting_block = current_block;
 
         loop {
-
-            let mut call = scrape_block(&provider, current_block, &contracts_of_interest, &map, &event, &client);
+            let mut call = scrape_block(
+                &provider,
+                current_block,
+                &contracts_of_interest,
+                &map,
+                &event,
+                &client,
+            );
             calls.push(call);
 
-            current_block=current_block+1;
+            current_block = current_block + 1;
 
             if (current_block > starting_block + at_once) {
                 break;
@@ -260,5 +253,4 @@ async fn main() -> Result<(), Error>  {
     }
 
     Ok(())
-
 }
