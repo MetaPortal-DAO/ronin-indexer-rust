@@ -73,6 +73,8 @@ async fn scrape_block(
         .map(|c| c.address)
         .collect();
 
+    let mut count = 0u32;
+
     for tx in block.transactions {
         if let Some(tx_to) = tx.to {
             let tx_to = to_string(&tx_to);
@@ -106,6 +108,7 @@ async fn scrape_block(
 
                         let transfer = TransferOnly {
                             ts: block.timestamp.to_string(),
+                            sort_key: count.to_string(),
                             block: current_block.to_string(),
                             txhash: tx.hash.to_string(),
                             from,
@@ -115,6 +118,7 @@ async fn scrape_block(
 
                         aws_utils::add_item(&client, &tx_to.clone(), transfer).await;
                         println!("Written in the table");
+                        count = count + 1;
 
                         // let doc = to_document(&transfer).expect("Error");
                         // collection.insert_one(doc, None).await;

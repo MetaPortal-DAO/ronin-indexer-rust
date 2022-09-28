@@ -13,6 +13,7 @@ use web3::types::H256;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TransferOnly {
     pub ts: String,
+    pub sort_key: String,
     pub block: String,
     pub txhash: String,
     pub from: String,
@@ -99,7 +100,7 @@ pub async fn add_item(
     item: TransferOnly,
 ) -> Result<(), SdkError<aws_sdk_dynamodb::error::PutItemError>> {
     let hashkey = AttributeValue::S(item.block);
-    let sortkey = AttributeValue::S(item.txhash.to_string());
+    let sortkey = AttributeValue::S(item.sort_key);
     let ts = AttributeValue::S(item.ts);
     let from = AttributeValue::S(item.from);
     let to = AttributeValue::S(item.to);
