@@ -208,7 +208,7 @@ async fn main() -> Result<(), Error> {
         let res = aws_utils::does_table_exist(&client, element).await.unwrap();
 
         if (res == false) {
-            aws_utils::create_table(&client, &element, "block", "txhash").await;
+            aws_utils::create_table(&client, &element, "block", "counter").await;
         } else {
             println!("Table {} already exists", element);
         }

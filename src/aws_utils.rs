@@ -61,7 +61,7 @@ pub async fn create_table(
 
     let ks1 = KeySchemaElement::builder()
         .attribute_name(&sort_name)
-        .key_type(KeyType::Hash)
+        .key_type(KeyType::Range)
         .build();
 
     let pt = ProvisionedThroughput::builder()
