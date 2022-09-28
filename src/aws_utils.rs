@@ -8,10 +8,13 @@ use aws_smithy_http::result::SdkError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use web3::types::H256;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TransferOnly {
     pub ts: String,
     pub block: String,
+    pub txhash: String,
     pub from: String,
     pub to: String,
     pub value: String,
@@ -31,17 +34,33 @@ pub async fn does_table_exist(client: &Client, table: &str) -> Result<bool, Erro
     Ok(table_exists)
 }
 
-pub async fn create_table(client: &Client, table: &str, key: &str) -> Result<(), Error> {
-    let a_name: String = key.into();
+pub async fn create_table(
+    client: &Client,
+    table: &str,
+    hashkey: &str,
+    sortkey: &str,
+) -> Result<(), Error> {
+    let hash_name: String = hashkey.into();
+    let sort_name: String = sortkey.into();
     let table_name: String = table.into();
 
     let ad = AttributeDefinition::builder()
-        .attribute_name(&a_name)
+        .attribute_name(&hash_name)
+        .attribute_type(ScalarAttributeType::S)
+        .build();
+
+    let ad1 = AttributeDefinition::builder()
+        .attribute_name(&sort_name)
         .attribute_type(ScalarAttributeType::S)
         .build();
 
     let ks = KeySchemaElement::builder()
-        .attribute_name(&a_name)
+        .attribute_name(&hash_name)
+        .key_type(KeyType::Hash)
+        .build();
+
+    let ks1 = KeySchemaElement::builder()
+        .attribute_name(&sort_name)
         .key_type(KeyType::Hash)
         .build();
 
@@ -54,12 +73,17 @@ pub async fn create_table(client: &Client, table: &str, key: &str) -> Result<(),
         .create_table()
         .table_name(table_name)
         .key_schema(ks)
+        .key_schema(ks1)
         .attribute_definitions(ad)
+        .attribute_definitions(ad1)
         .provisioned_throughput(pt)
         .send()
         .await
     {
-        Ok(_) => println!("Added table {} with key {}", table, key),
+        Ok(_) => println!(
+            "Added table {} with hashkey {} and sortkey {}",
+            table, hashkey, sortkey
+        ),
         Err(e) => {
             println!("Got an error creating table:");
             println!("{}", e);
@@ -74,9 +98,9 @@ pub async fn add_item(
     table: &str,
     item: TransferOnly,
 ) -> Result<(), SdkError<aws_sdk_dynamodb::error::PutItemError>> {
-    let key = AttributeValue::S(Uuid::new_v4().to_string());
+    let hashkey = AttributeValue::S(item.block);
+    let sortkey = AttributeValue::S(item.txhash.to_string());
     let ts = AttributeValue::S(item.ts);
-    let block = AttributeValue::S(item.block);
     let from = AttributeValue::S(item.from);
     let to = AttributeValue::S(item.to);
     let value = AttributeValue::S(item.value);
@@ -84,9 +108,9 @@ pub async fn add_item(
     match client
         .put_item()
         .table_name(table)
-        .item("key", key)
+        .item("partitionkey", hashkey)
+        .item("sortkey", sortkey)
         .item("ts", ts)
-        .item("block", block)
         .item("to", to)
         .item("from", from)
         .item("value", value)
