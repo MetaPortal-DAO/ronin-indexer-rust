@@ -163,7 +163,7 @@ async fn main() -> Result<(), Error> {
     );
 
     map.insert(
-        "97a9107c1793bc407d6f527b77e7fff4d812bece",
+        "0x97a9107c1793bc407d6f527b77e7fff4d812bece",
         Contract {
             name: "AXS",
             decimals: 18,
