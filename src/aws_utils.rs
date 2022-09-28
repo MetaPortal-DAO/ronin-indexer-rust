@@ -109,8 +109,8 @@ pub async fn add_item(
     match client
         .put_item()
         .table_name(table)
-        .item("partitionkey", hashkey)
-        .item("sortkey", sortkey)
+        .item("block", hashkey)
+        .item("counter", sortkey)
         .item("ts", ts)
         .item("to", to)
         .item("from", from)
