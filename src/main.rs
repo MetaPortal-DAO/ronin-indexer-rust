@@ -1,7 +1,10 @@
 use crate::ContractType::ERC20;
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use dotenv::dotenv;
 use futures::future::join_all;
+use influxdb::InfluxDbWriteable;
+use influxdb::{Client, Query, ReadQuery, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -9,9 +12,6 @@ use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use influxdb::{Client, Query, Timestamp, ReadQuery};
-use influxdb::InfluxDbWriteable;
-use chrono::{DateTime, Utc, NaiveDateTime};
 
 #[derive(InfluxDbWriteable)]
 pub struct TransferOnly {
@@ -117,7 +117,7 @@ async fn scrape_block(
                         let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
                         let naive = NaiveDateTime::from_timestamp(timestamp, 0);
                         let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-                        
+
                         // let u_value = u64::from_str_radix(&value, 16).unwrap();
 
                         // println!("{} {} {} {} {} {}", datetime, current_block, from, to, tx.hash.to_string(), u_value);
@@ -131,14 +131,10 @@ async fn scrape_block(
                             value: value,
                         };
 
-
                         let write_query = transfer.into_query(&tx_to.clone());
                         let write_result = client.query(write_query).await;
-                        
+
                         assert!(write_result.is_ok(), "Write result was not okay");
-
-
-
                     }
                 } else {
                     println!("Null");
@@ -154,11 +150,17 @@ async fn main() {
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
     let INFLUXDB_TOKEN = std::env::var("INFLUXDB_TOKEN").expect("INFLUXDB_TOKEN must be set.");
 
-    let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com").with_auth("metaportalweb@gmail.com", INFLUXDB_TOKEN);
+    let client = Client::new(
+        "https://us-east-1-1.aws.cloud2.influxdata.com",
+        "metaportalweb@gmail.com",
+    )
+    .with_auth("metaportalweb@gmail.com", INFLUXDB_TOKEN);
     let det = client.ping().await.unwrap();
 
-    println!("Autenticated Succesfully to influx server: {} {}", det.0, det.1);
-
+    println!(
+        "Autenticated Succesfully to influx server: {} {}",
+        det.0, det.1
+    );
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
@@ -228,7 +230,6 @@ async fn main() {
 
     let mut current_block = 15000000u64;
 
-
     // for element in contracts_of_interest {
     //     client
     //         .query(ReadQuery::new( format!("CREATE DATABASE {}", element)))
@@ -239,7 +240,7 @@ async fn main() {
 
     // let read_query = ReadQuery::new("SELECT * FROM 0xa8754b9fa15fc18bb59458815510e40a12cd2014");
     // let read_result = client.query(read_query).await.unwrap();
-    
+
     // println!("{}", read_result);
     // let res = client.query(ReadQuery::new( format!("SELECT MAX(block_number) FROM '0xa8754b9fa15fc18bb59458815510e40a12cd2014'"))).await;
 
@@ -285,5 +286,4 @@ async fn main() {
         join_all(calls).await;
         println!("Completed a thread: {}", current_block);
     }
-
 }
