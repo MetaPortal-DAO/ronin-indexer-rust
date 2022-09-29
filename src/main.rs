@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc, NaiveDateTime};
 #[derive(InfluxDbWriteable)]
 pub struct TransferOnly {
     pub time: DateTime<Utc>,
-    pub block: String,
+    pub block: u64,
     pub from: String,
     pub to: String,
     pub txhash: String,
@@ -117,21 +117,23 @@ async fn scrape_block(
                         let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
                         let naive = NaiveDateTime::from_timestamp(timestamp, 0);
                         let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+                        
+                        // let u_value = u64::from_str_radix(&value, 16).unwrap();
+
+                        // println!("{} {} {} {} {} {}", datetime, current_block, from, to, tx.hash.to_string(), u_value);
 
                         let transfer = TransferOnly {
                             time: datetime,
-                            block: current_block.to_string(),
-                            from,
-                            to,
+                            block: current_block,
+                            from: from,
+                            to: to,
                             txhash: tx.hash.to_string(),
-                            value,
+                            value: value,
                         };
 
-                        println!("Got data");
 
-                        let write_result = client
-                                                                            .query(transfer.into_query(&tx_to.clone()))
-                                                                            .await;
+                        let write_query = transfer.into_query(&tx_to.clone());
+                        let write_result = client.query(write_query).await;
                         
                         assert!(write_result.is_ok(), "Write result was not okay");
 
@@ -166,7 +168,7 @@ async fn main() {
 
     let contracts_of_interest = [
         "0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5",
-        "97a9107c1793bc407d6f527b77e7fff4d812bece",
+        "0x97a9107c1793bc407d6f527b77e7fff4d812bece",
         "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
     ];
 
@@ -227,15 +229,23 @@ async fn main() {
     let mut current_block = 15000000u64;
 
 
-    for element in contracts_of_interest {
-        client
-            .query(ReadQuery::new( format!("CREATE DATABASE {}", element)))
-            .await
-            .expect("could not setup db");
+    // for element in contracts_of_interest {
+    //     client
+    //         .query(ReadQuery::new( format!("CREATE DATABASE {}", element)))
+    //         .await
+    //         .expect("could not setup db");
 
-        println!("Created Database: {}", element);
-    }
+    // }
 
+    // let read_query = ReadQuery::new("SELECT * FROM 0xa8754b9fa15fc18bb59458815510e40a12cd2014");
+    // let read_result = client.query(read_query).await.unwrap();
+    
+    // println!("{}", read_result);
+    // let res = client.query(ReadQuery::new( format!("SELECT MAX(block_number) FROM '0xa8754b9fa15fc18bb59458815510e40a12cd2014'"))).await;
+
+    // if res.is_ok(){
+    //     println!("{}", res.unwrap());
+    // }
 
     loop {
         let mut calls = Vec::new();
