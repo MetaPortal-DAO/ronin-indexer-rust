@@ -13,3 +13,4 @@ dotenv = "0.15.0"
 futures = "0.3.24"
 influxdb = { version = "0.5.2", features = ["derive"] }
 chrono = "0.4"
+influxdb2 = "0.3"
