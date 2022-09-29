@@ -9,7 +9,9 @@ use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use influxdb2::{Client};
+use influxdb::{Client};
+use influxdb2::{Client as Clientv2, models::DataPoint};
+use futures::prelude::*;
 
 use influxdb::InfluxDbWriteable;
 use chrono::{DateTime, Utc, NaiveDateTime};
@@ -57,7 +59,7 @@ async fn scrape_block(
     contracts_of_interest: &[&str; 3],
     map: &HashMap<&str, Contract>,
     event: &Event,
-    client: &Client,
+    client: &Clientv2,
 ) {
     let web3 = Web3::new(provider);
 
@@ -122,22 +124,15 @@ async fn scrape_block(
                         
                         println!("{} {} {} {} {} {}", datetime, current_block, from, to, tx.hash.to_string(), value_float);
 
-
-                        let transfer = TransferOnly {
-                            time: datetime,
-                            from: from,
-                            to: to,
-                            value: value_float,
-                        };
+                        let q = DataPoint::builder("value")
+                            .timestamp(timestamp)
+                            .tag("from", from)
+                            .tag("to", to)
+                            .field("value", value_float).build();
 
 
-                        // client.write(deets.name, stream::iter(points)).await;
 
-
-                        // let write_query = transfer.into_query(&tx_to.clone());
-                        // let write_result = client.query(write_query).await;
-                        
-                        // assert!(write_result.is_ok(), "Write result was not okay");
+                        client.write(deets.name, stream::iter(q)).await;
 
 
 
@@ -156,7 +151,9 @@ async fn main() {
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
     let INFLUXDB_TOKEN = std::env::var("INFLUXDB_TOKEN").expect("INFLUXDB_TOKEN must be set.");
 
-    let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com", &INFLUXDB_TOKEN);
+    let client = Clientv2::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com", &INFLUXDB_TOKEN);
+    // let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com").with_auth("metaportalweb@gmail.com", &INFLUXDB_TOKEN);
+
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
