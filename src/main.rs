@@ -1,19 +1,27 @@
 use crate::ContractType::ERC20;
-use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_dynamodb::{Client, Error};
+
 use dotenv::dotenv;
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
-use thousands::Separable;
+use std::str::FromStr;
 use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
+use influxdb::{Client, Query, Timestamp, ReadQuery};
+use influxdb::InfluxDbWriteable;
+use chrono::{DateTime, Utc, NaiveDateTime};
 
-mod aws_utils;
-use aws_utils::TransferOnly;
+#[derive(InfluxDbWriteable)]
+pub struct TransferOnly {
+    pub time: DateTime<Utc>,
+    pub block: String,
+    pub from: String,
+    pub to: String,
+    pub txhash: String,
+    pub value: String,
+}
 
 const ERC_TRANSFER_TOPIC: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -106,22 +114,29 @@ async fn scrape_block(
                         let to = to_string(&data.params[1].value.to_string());
                         let value = to_string(&data.params[2].value.to_string());
 
+                        let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
+                        let naive = NaiveDateTime::from_timestamp(timestamp, 0);
+                        let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+
                         let transfer = TransferOnly {
-                            ts: block.timestamp.to_string(),
-                            sort_key: count.to_string(),
+                            time: datetime,
                             block: current_block.to_string(),
-                            txhash: tx.hash.to_string(),
                             from,
                             to,
+                            txhash: tx.hash.to_string(),
                             value,
                         };
 
-                        aws_utils::add_item(&client, &tx_to.clone(), transfer).await;
-                        println!("Written in the table");
-                        count = count + 1;
+                        println!("Got data");
 
-                        // let doc = to_document(&transfer).expect("Error");
-                        // collection.insert_one(doc, None).await;
+                        let write_result = client
+                                                                            .query(transfer.into_query(&tx_to.clone()))
+                                                                            .await;
+                        
+                        assert!(write_result.is_ok(), "Write result was not okay");
+
+
+
                     }
                 } else {
                     println!("Null");
@@ -132,13 +147,16 @@ async fn scrape_block(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() {
     dotenv().ok();
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
+    let INFLUXDB_TOKEN = std::env::var("INFLUXDB_TOKEN").expect("INFLUXDB_TOKEN must be set.");
 
-    let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
-    let config = aws_config::from_env().region(region_provider).load().await;
-    let client = Client::new(&config);
+    let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com").with_auth("metaportalweb@gmail.com", INFLUXDB_TOKEN);
+    let det = client.ping().await.unwrap();
+
+    println!("Autenticated Succesfully to influx server: {} {}", det.0, det.1);
+
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
@@ -208,15 +226,16 @@ async fn main() -> Result<(), Error> {
 
     let mut current_block = 15000000u64;
 
-    for element in contracts_of_interest {
-        let res = aws_utils::does_table_exist(&client, element).await.unwrap();
 
-        if (res == false) {
-            aws_utils::create_table(&client, &element, "block", "counter").await;
-        } else {
-            println!("Table {} already exists", element);
-        }
+    for element in contracts_of_interest {
+        client
+            .query(ReadQuery::new( format!("CREATE DATABASE {}", element)))
+            .await
+            .expect("could not setup db");
+
+        println!("Created Database: {}", element);
     }
+
 
     loop {
         let mut calls = Vec::new();
@@ -257,5 +276,4 @@ async fn main() -> Result<(), Error> {
         println!("Completed a thread: {}", current_block);
     }
 
-    Ok(())
 }
