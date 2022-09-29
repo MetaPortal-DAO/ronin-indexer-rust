@@ -81,8 +81,6 @@ async fn scrape_block(
         .map(|c| c.address)
         .collect();
 
-    let mut count = 0u32;
-
     for tx in block.transactions {
         if let Some(tx_to) = tx.to {
             let tx_to = to_string(&tx_to);

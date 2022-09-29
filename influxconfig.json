@@ -1,0 +1,6 @@
+[
+    {"name": "time", "type": "timestamp"},
+    {"name": "from", "type": "tag"},
+    {"name": "to", "type": "tag"},
+    {"name": "value", "type": "field", "dataType": "float"}
+]
