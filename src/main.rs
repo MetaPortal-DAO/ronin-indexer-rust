@@ -1,10 +1,7 @@
 use crate::ContractType::ERC20;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
 use dotenv::dotenv;
 use futures::future::join_all;
-use influxdb::InfluxDbWriteable;
-use influxdb::{Client, Query, ReadQuery, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -12,6 +9,11 @@ use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
+use influxdb::{Client};
+use influxdb2::{Client as Clientv2};
+
+use influxdb::InfluxDbWriteable;
+use chrono::{DateTime, Utc, NaiveDateTime};
 
 #[derive(InfluxDbWriteable)]
 pub struct TransferOnly {
@@ -20,7 +22,7 @@ pub struct TransferOnly {
     pub from: String,
     pub to: String,
     pub txhash: String,
-    pub value: String,
+    pub value: f64,
 }
 
 const ERC_TRANSFER_TOPIC: &str =
@@ -118,23 +120,41 @@ async fn scrape_block(
                         let naive = NaiveDateTime::from_timestamp(timestamp, 0);
                         let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
 
-                        // let u_value = u64::from_str_radix(&value, 16).unwrap();
+                        let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;  
+                        let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap().decimals;
+                        value_float = value_float / 10f64.powf(deets as f64);
 
-                        // println!("{} {} {} {} {} {}", datetime, current_block, from, to, tx.hash.to_string(), u_value);
+                        
+                        println!("{} {} {} {} {} {} {}", datetime, current_block, from, to, tx.hash.to_string(), value_float, deets);
 
-                        let transfer = TransferOnly {
-                            time: datetime,
-                            block: current_block,
-                            from: from,
-                            to: to,
-                            txhash: tx.hash.to_string(),
-                            value: value,
-                        };
+                            
+                        
+                        // let deets = map.get(&to.clone().to_lowercase() as &str).unwrap();
 
-                        let write_query = transfer.into_query(&tx_to.clone());
-                        let write_result = client.query(write_query).await;
 
-                        assert!(write_result.is_ok(), "Write result was not okay");
+
+                        // // let exp = deets.decimals as u32;
+                        // // let actual = u_value / BigUint::parse_bytes(b"10", 10).unwrap().pow(exp);
+                        // // let fVal = actual.to_str_radix(10);
+
+
+                        // let transfer = TransferOnly {
+                        //     time: datetime,
+                        //     block: current_block,
+                        //     from: from,
+                        //     to: to,
+                        //     txhash: tx.hash.to_string(),
+                        //     value: value,
+                        // };
+
+
+                        // let write_query = transfer.into_query(&tx_to.clone());
+                        // let write_result = client.query(write_query).await;
+                        
+                        // assert!(write_result.is_ok(), "Write result was not okay");
+
+
+
                     }
                 } else {
                     println!("Null");
@@ -150,17 +170,14 @@ async fn main() {
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
     let INFLUXDB_TOKEN = std::env::var("INFLUXDB_TOKEN").expect("INFLUXDB_TOKEN must be set.");
 
-    let client = Client::new(
-        "https://us-east-1-1.aws.cloud2.influxdata.com",
-        "metaportalweb@gmail.com",
-    )
-    .with_auth("metaportalweb@gmail.com", INFLUXDB_TOKEN);
+    let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com").with_auth("metaportalweb@gmail.com", &INFLUXDB_TOKEN);
+    let clientv2 = Clientv2::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com", &INFLUXDB_TOKEN);
+
+
     let det = client.ping().await.unwrap();
 
-    println!(
-        "Autenticated Succesfully to influx server: {} {}",
-        det.0, det.1
-    );
+    println!("Autenticated Succesfully to influx server: {} {}", det.0, det.1);
+
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
@@ -190,7 +207,7 @@ async fn main() {
             name: "AXS",
             decimals: 18,
             erc: ContractType::ERC20,
-            address: "97a9107c1793bc407d6f527b77e7fff4d812bece",
+            address: "0x97a9107c1793bc407d6f527b77e7fff4d812bece",
         },
     );
 
@@ -230,23 +247,17 @@ async fn main() {
 
     let mut current_block = 15000000u64;
 
-    // for element in contracts_of_interest {
-    //     client
-    //         .query(ReadQuery::new( format!("CREATE DATABASE {}", element)))
-    //         .await
-    //         .expect("could not setup db");
 
-    // }
 
-    // let read_query = ReadQuery::new("SELECT * FROM 0xa8754b9fa15fc18bb59458815510e40a12cd2014");
-    // let read_result = client.query(read_query).await.unwrap();
-
-    // println!("{}", read_result);
-    // let res = client.query(ReadQuery::new( format!("SELECT MAX(block_number) FROM '0xa8754b9fa15fc18bb59458815510e40a12cd2014'"))).await;
-
-    // if res.is_ok(){
-    //     println!("{}", res.unwrap());
-    // }
+    // let qs = format!("from(bucket: "metaportalweb@gmail.com/autogen")
+    // |> range(start: -10000000000m)
+    // |> filter(fn: (r) => r["_measurement"] == "0xa8754b9fa15fc18bb59458815510e40a12cd2014")
+    // |> filter(fn: (r) => r["_field"] == "block")
+    // |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)
+    // |> yield(name: "max")
+    // ", "AAPL");
+    
+    // let query = Query::new(qs.to_string());
 
     loop {
         let mut calls = Vec::new();
@@ -286,4 +297,5 @@ async fn main() {
         join_all(calls).await;
         println!("Completed a thread: {}", current_block);
     }
+
 }
