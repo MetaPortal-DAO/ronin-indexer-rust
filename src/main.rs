@@ -9,8 +9,7 @@ use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use influxdb::{Client};
-use influxdb2::{Client as Clientv2};
+use influxdb2::{Client};
 
 use influxdb::InfluxDbWriteable;
 use chrono::{DateTime, Utc, NaiveDateTime};
@@ -18,11 +17,9 @@ use chrono::{DateTime, Utc, NaiveDateTime};
 #[derive(InfluxDbWriteable)]
 pub struct TransferOnly {
     pub time: DateTime<Utc>,
-    pub block: u64,
     pub from: String,
     pub to: String,
-    pub txhash: String,
-    pub value: f64,
+    pub value: f64
 }
 
 const ERC_TRANSFER_TOPIC: &str =
@@ -83,8 +80,6 @@ async fn scrape_block(
         .map(|c| c.address)
         .collect();
 
-    let mut count = 0u32;
-
     for tx in block.transactions {
         if let Some(tx_to) = tx.to {
             let tx_to = to_string(&tx_to);
@@ -121,31 +116,22 @@ async fn scrape_block(
                         let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
 
                         let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;  
-                        let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap().decimals;
-                        value_float = value_float / 10f64.powf(deets as f64);
+                        let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
+                        value_float = value_float / 10f64.powf(deets.decimals as f64);
 
                         
-                        println!("{} {} {} {} {} {} {}", datetime, current_block, from, to, tx.hash.to_string(), value_float, deets);
-
-                            
-                        
-                        // let deets = map.get(&to.clone().to_lowercase() as &str).unwrap();
+                        println!("{} {} {} {} {} {}", datetime, current_block, from, to, tx.hash.to_string(), value_float);
 
 
+                        let transfer = TransferOnly {
+                            time: datetime,
+                            from: from,
+                            to: to,
+                            value: value_float,
+                        };
 
-                        // // let exp = deets.decimals as u32;
-                        // // let actual = u_value / BigUint::parse_bytes(b"10", 10).unwrap().pow(exp);
-                        // // let fVal = actual.to_str_radix(10);
 
-
-                        // let transfer = TransferOnly {
-                        //     time: datetime,
-                        //     block: current_block,
-                        //     from: from,
-                        //     to: to,
-                        //     txhash: tx.hash.to_string(),
-                        //     value: value,
-                        // };
+                        // client.write(deets.name, stream::iter(points)).await;
 
 
                         // let write_query = transfer.into_query(&tx_to.clone());
@@ -170,14 +156,7 @@ async fn main() {
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
     let INFLUXDB_TOKEN = std::env::var("INFLUXDB_TOKEN").expect("INFLUXDB_TOKEN must be set.");
 
-    let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com").with_auth("metaportalweb@gmail.com", &INFLUXDB_TOKEN);
-    let clientv2 = Clientv2::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com", &INFLUXDB_TOKEN);
-
-
-    let det = client.ping().await.unwrap();
-
-    println!("Autenticated Succesfully to influx server: {} {}", det.0, det.1);
-
+    let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com", &INFLUXDB_TOKEN);
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
