@@ -9,21 +9,11 @@ use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use influxdb::{Client};
-use influxdb2::{Client as Clientv2, models::DataPoint};
+use influxdb2::{Client as Client, models::DataPoint};
 use futures::prelude::*;
-
-use influxdb::InfluxDbWriteable;
-use chrono::{DateTime, Utc, NaiveDateTime};
-
-#[derive(InfluxDbWriteable)]
-pub struct TransferOnly {
-    pub time: DateTime<Utc>,
-    pub from: String,
-    pub to: String,
-    pub value: f64
-}
-
+use std::fs;
+use std::path::Path;
+use std::fs::File;
 const ERC_TRANSFER_TOPIC: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
@@ -59,7 +49,7 @@ async fn scrape_block(
     contracts_of_interest: &[&str; 3],
     map: &HashMap<&str, Contract>,
     event: &Event,
-    client: &Clientv2,
+    client: &Client,
 ) {
     let web3 = Web3::new(provider);
 
@@ -114,23 +104,21 @@ async fn scrape_block(
                         let value = to_string(&data.params[2].value.to_string());
 
                         let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
-                        let naive = NaiveDateTime::from_timestamp(timestamp, 0);
-                        let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
 
                         let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;  
                         let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
                         value_float = value_float / 10f64.powf(deets.decimals as f64);
 
                         
-                        println!("{} {} {} {} {} {}", datetime, current_block, from, to, tx.hash.to_string(), value_float);
 
                         let q = DataPoint::builder("value")
-                            .timestamp(timestamp)
+                            .timestamp(timestamp * 1000)
                             .tag("from", from)
                             .tag("to", to)
                             .field("value", value_float).build();
 
 
+                        
 
                         client.write(deets.name, stream::iter(q)).await;
 
@@ -151,7 +139,7 @@ async fn main() {
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
     let INFLUXDB_TOKEN = std::env::var("INFLUXDB_TOKEN").expect("INFLUXDB_TOKEN must be set.");
 
-    let client = Clientv2::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com", &INFLUXDB_TOKEN);
+    let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com", &INFLUXDB_TOKEN);
     // let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com").with_auth("metaportalweb@gmail.com", &INFLUXDB_TOKEN);
 
 
@@ -223,17 +211,12 @@ async fn main() {
 
     let mut current_block = 15000000u64;
 
+    if (Path::new("current_block").exists()){
+        current_block = fs::read_to_string("current_block").unwrap().parse::<i64>().unwrap() as u64;
+    }
 
+    println!("Starting from block: {}", current_block);
 
-    // let qs = format!("from(bucket: "metaportalweb@gmail.com/autogen")
-    // |> range(start: -10000000000m)
-    // |> filter(fn: (r) => r["_measurement"] == "0xa8754b9fa15fc18bb59458815510e40a12cd2014")
-    // |> filter(fn: (r) => r["_field"] == "block")
-    // |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)
-    // |> yield(name: "max")
-    // ", "AAPL");
-    
-    // let query = Query::new(qs.to_string());
 
     loop {
         let mut calls = Vec::new();
@@ -269,6 +252,8 @@ async fn main() {
                 break;
             }
         }
+
+        fs::write("current_block", current_block.to_string()).expect("Unable to write file");
 
         join_all(calls).await;
         println!("Completed a thread: {}", current_block);
