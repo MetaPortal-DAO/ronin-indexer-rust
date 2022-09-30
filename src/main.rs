@@ -49,7 +49,7 @@ pub struct Transfer {
 async fn scrape_block(
     provider: &WebSocket,
     current_block: u64,
-    contracts_of_interest: &[&str; 3],
+    contracts_of_interest: &[&str; 4],
     map: &HashMap<&str, Contract>,
     event: &Event,
     client: &Client,
@@ -152,6 +152,7 @@ async fn main() {
         "0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5",
         "0x97a9107c1793bc407d6f527b77e7fff4d812bece",
         "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
+        "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
     ];
 
     map.insert(
@@ -181,6 +182,15 @@ async fn main() {
             decimals: 0,
             erc: ContractType::ERC20,
             address: "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
+        },
+    );
+    map.insert(
+        "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
+        Contract {
+            name: "GATEWAY",
+            decimals: 18,
+            erc: ContractType::ERC20,
+            address: "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
         },
     );
 
