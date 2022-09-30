@@ -106,12 +106,6 @@ async fn scrape_block(
                         let from = to_string(&data.params[0].value.to_string());
                         let to = to_string(&data.params[1].value.to_string());
 
-                        println!("{}", from);
-
-                        if from == "fff9ce5f71ca6178d3beecedb61e7eff1602950e" {
-                            println!("we did it");
-                        }
-
                         let value = to_string(&data.params[2].value.to_string());
 
                         let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
@@ -127,13 +121,12 @@ async fn scrape_block(
                             .field("value", value_float)
                             .build();
 
-                        // !!! once done uncomment
-                        // client.write(deets.name, stream::iter(q)).await;
+                        client.write(deets.name, stream::iter(q)).await;
                     }
                 } else {
                     println!("Null");
                 }
-            }
+            };
         };
     }
 }
