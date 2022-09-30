@@ -10,6 +10,7 @@ use std::fs;
 use std::fs::File;
 use std::path::Path;
 use std::str::FromStr;
+use std::{thread, time};
 use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
@@ -104,6 +105,13 @@ async fn scrape_block(
 
                         let from = to_string(&data.params[0].value.to_string());
                         let to = to_string(&data.params[1].value.to_string());
+
+                        println!("{}", from);
+
+                        if from == "fff9ce5f71ca6178d3beecedb61e7eff1602950e" {
+                            println!("we did it");
+                        }
+
                         let value = to_string(&data.params[2].value.to_string());
 
                         let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
@@ -119,7 +127,8 @@ async fn scrape_block(
                             .field("value", value_float)
                             .build();
 
-                        client.write(deets.name, stream::iter(q)).await;
+                        // !!! once done uncomment
+                        // client.write(deets.name, stream::iter(q)).await;
                     }
                 } else {
                     println!("Null");
@@ -218,7 +227,7 @@ async fn main() {
 
     let at_once = 150;
 
-    let mut current_block = 15000000u64;
+    let mut current_block = 17000000u64;
 
     if (Path::new("current_block").exists()) {
         current_block = fs::read_to_string("current_block")
