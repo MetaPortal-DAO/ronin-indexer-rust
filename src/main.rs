@@ -2,20 +2,23 @@ use crate::ContractType::ERC20;
 
 use dotenv::dotenv;
 use futures::future::join_all;
+use futures::prelude::*;
+use influxdb2::{models::DataPoint, Client};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::fs::File;
+use std::path::Path;
 use std::str::FromStr;
 use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
 use web3::Web3;
-use influxdb2::{Client as Client, models::DataPoint};
-use futures::prelude::*;
-use std::fs;
-use std::path::Path;
-use std::fs::File;
 const ERC_TRANSFER_TOPIC: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+const MARKETPLACE_TREASURY_TOPIC: &str =
+    "0x000000000000000000000000a99cacd1427f493a95b585a5c7989a08c86a616b";
 
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
@@ -105,25 +108,18 @@ async fn scrape_block(
 
                         let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
 
-                        let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;  
+                        let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;
                         let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
                         value_float = value_float / 10f64.powf(deets.decimals as f64);
-
-                        
 
                         let q = DataPoint::builder("value")
                             .timestamp(timestamp * 1000)
                             .tag("from", from)
                             .tag("to", to)
-                            .field("value", value_float).build();
-
-
-                        
+                            .field("value", value_float)
+                            .build();
 
                         client.write(deets.name, stream::iter(q)).await;
-
-
-
                     }
                 } else {
                     println!("Null");
@@ -139,9 +135,12 @@ async fn main() {
     let PROVIDER_URL = std::env::var("PROVIDER_URL").expect("PROVIDER_URL must be set.");
     let INFLUXDB_TOKEN = std::env::var("INFLUXDB_TOKEN").expect("INFLUXDB_TOKEN must be set.");
 
-    let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com", &INFLUXDB_TOKEN);
+    let client = Client::new(
+        "https://us-east-1-1.aws.cloud2.influxdata.com",
+        "metaportalweb@gmail.com",
+        &INFLUXDB_TOKEN,
+    );
     // let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com").with_auth("metaportalweb@gmail.com", &INFLUXDB_TOKEN);
-
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
@@ -211,12 +210,14 @@ async fn main() {
 
     let mut current_block = 15000000u64;
 
-    if (Path::new("current_block").exists()){
-        current_block = fs::read_to_string("current_block").unwrap().parse::<i64>().unwrap() as u64;
+    if (Path::new("current_block").exists()) {
+        current_block = fs::read_to_string("current_block")
+            .unwrap()
+            .parse::<i64>()
+            .unwrap() as u64;
     }
 
     println!("Starting from block: {}", current_block);
-
 
     loop {
         let mut calls = Vec::new();
@@ -258,5 +259,4 @@ async fn main() {
         join_all(calls).await;
         println!("Completed a thread: {}", current_block);
     }
-
 }
