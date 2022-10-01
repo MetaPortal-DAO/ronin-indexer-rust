@@ -105,7 +105,7 @@ async fn scrape_block(
 
                             let to = to_string(&data.params[1].value.to_string());
                             if to != "a99cacd1427f493a95b585a5c7989a08c86a616b" {
-                                panic!("Not picking up the right treasury address @112");
+                                panic!("Not picking up the right treasury address @108");
                             }
                             let from = to_string(&data.params[0].value.to_string());
 
