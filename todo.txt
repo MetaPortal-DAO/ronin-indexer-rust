@@ -1,2 +1,2 @@
-1. make sure gateway interactions filter for whether SLP or WETH
-2. deploy screen ec2
+1. clean up code on main - see if theres additional things we can modularize or optimize
+2. Do we need all 4 token transfers? - Think cost benefit here 
