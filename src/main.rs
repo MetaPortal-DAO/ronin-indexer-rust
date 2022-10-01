@@ -108,6 +108,11 @@ async fn scrape_block(
 
                         let value = to_string(&data.params[2].value.to_string());
 
+                        if from == "fff9ce5f71ca6178d3beecedb61e7eff1602950e" {
+                            println!("{}", value);
+                            println!("{:?}", transfer);
+                        }
+
                         let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
 
                         let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;

@@ -1,2 +1,2 @@
-1. refactor main.rs to write to mongodb 
-2. refactor mongodb to be of right data format remove superfluous materials (the original indexer collects much more data)
+1. make sure gateway interactions filter for whether SLP or WETH
+2. deploy screen ec2
