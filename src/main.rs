@@ -7,10 +7,7 @@ use influxdb2::{models::DataPoint, Client};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::fs::File;
 use std::path::Path;
-use std::str::FromStr;
-use std::{thread, time};
 use web3::ethabi::{Event, EventParam, ParamType, RawLog};
 use web3::transports::WebSocket;
 use web3::types::{BlockId, BlockNumber, Log};
@@ -18,8 +15,7 @@ use web3::Web3;
 const ERC_TRANSFER_TOPIC: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-const MARKETPLACE_TREASURY_TOPIC: &str =
-    "0x000000000000000000000000a99cacd1427f493a95b585a5c7989a08c86a616b";
+const MARKETPLACE_TREASURY_TOPIC: &str = "0x0000…616b";
 
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
@@ -57,7 +53,7 @@ async fn scrape_block(
 ) {
     let web3 = Web3::new(provider);
 
-    let chain_head_block = web3
+    let _chain_head_block = web3
         .eth()
         .block_number()
         .await
@@ -83,7 +79,7 @@ async fn scrape_block(
             if contracts_of_interest.contains(&tx_to.as_str()) {
                 let action = web3.eth().transaction_receipt(tx.hash).await.unwrap();
 
-                if (action.is_none() == false) {
+                if action.is_none() == false {
                     let receipt = action.unwrap();
 
                     let transfer_log = receipt
@@ -96,6 +92,44 @@ async fn scrape_block(
                         .collect::<Vec<&Log>>();
 
                     for transfer in transfer_log {
+                        // if it is an internal tx deposit into the treasury
+                        // then parse the Log and deposit into influx
+                        let topic = transfer.topics[2].to_string();
+                        if topic == MARKETPLACE_TREASURY_TOPIC {
+                            let data = event
+                                .parse_log(RawLog {
+                                    topics: transfer.to_owned().topics,
+                                    data: transfer.to_owned().data.0,
+                                })
+                                .unwrap();
+
+                            let to = to_string(&data.params[1].value.to_string());
+                            if to != "a99cacd1427f493a95b585a5c7989a08c86a616b" {
+                                panic!("Not picking up the right treasury address @112");
+                            }
+                            let from = to_string(&data.params[0].value.to_string());
+
+                            let value = to_string(&data.params[2].value.to_string());
+                            let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
+
+                            let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;
+                            let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
+                            value_float = value_float / 10f64.powf(deets.decimals as f64);
+
+                            let q = DataPoint::builder("value")
+                                .timestamp(timestamp * 1000)
+                                .tag("from", from)
+                                .tag("to", to)
+                                .field("value", value_float)
+                                .build();
+
+                            client.write(deets.name, stream::iter(q)).await;
+                        }
+
+                        // else if the topic is not a deposit into the treasury
+                        // then simply aggregate all erc20 transfers but
+                        // throw out those that're interacting with the gateaway
+
                         let data = event
                             .parse_log(RawLog {
                                 topics: transfer.to_owned().topics,
@@ -103,16 +137,13 @@ async fn scrape_block(
                             })
                             .unwrap();
 
-                        let from = to_string(&data.params[0].value.to_string());
                         let to = to_string(&data.params[1].value.to_string());
+                        if to == "fff9ce5f71ca6178d3beecedb61e7eff1602950e" {
+                            break;
+                        }
+                        let from = to_string(&data.params[0].value.to_string());
 
                         let value = to_string(&data.params[2].value.to_string());
-
-                        if from == "fff9ce5f71ca6178d3beecedb61e7eff1602950e" {
-                            println!("{}", value);
-                            println!("{:?}", transfer);
-                        }
-
                         let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
 
                         let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;
@@ -194,7 +225,7 @@ async fn main() {
     map.insert(
         "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
         Contract {
-            name: "GATEWAY",
+            name: "TREASURY",
             decimals: 18,
             erc: ContractType::ERC20,
             address: "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
@@ -227,7 +258,7 @@ async fn main() {
 
     let mut current_block = 17000000u64;
 
-    if (Path::new("current_block").exists()) {
+    if Path::new("current_block").exists() {
         current_block = fs::read_to_string("current_block")
             .unwrap()
             .parse::<i64>()
@@ -254,7 +285,7 @@ async fn main() {
         let starting_block = current_block;
 
         loop {
-            let mut call = scrape_block(
+            let call = scrape_block(
                 &provider,
                 current_block,
                 &contracts_of_interest,
@@ -266,7 +297,7 @@ async fn main() {
 
             current_block = current_block + 1;
 
-            if (current_block > starting_block + at_once) {
+            if current_block > starting_block + at_once {
                 break;
             }
         }
