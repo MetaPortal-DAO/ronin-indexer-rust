@@ -46,7 +46,7 @@ pub struct Transfer {
 async fn scrape_block(
     provider: &WebSocket,
     current_block: u64,
-    contracts_of_interest: &[&str; 4],
+    contracts_of_interest: &[&str; 5],
     map: &HashMap<&str, Contract>,
     event: &Event,
     client: &Client,
@@ -74,6 +74,7 @@ async fn scrape_block(
 
     for tx in block.transactions {
         if let Some(tx_to) = tx.to {
+            println!("{:?}", tx.to);
             let tx_to = to_string(&tx_to);
 
             if contracts_of_interest.contains(&tx_to.as_str()) {
@@ -123,7 +124,7 @@ async fn scrape_block(
                                 .field("value", value_float)
                                 .build();
 
-                            client.write(deets.name, stream::iter(q)).await;
+                            // client.write(deets.name, stream::iter(q)).await;
                         }
 
                         // else if the topic is not a deposit into the treasury
@@ -191,6 +192,7 @@ async fn main() {
         "0x97a9107c1793bc407d6f527b77e7fff4d812bece",
         "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
         "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
+        "0x32950db2a7164ae833121501c797d79e7b79d74c",
     ];
 
     map.insert(
@@ -222,6 +224,7 @@ async fn main() {
             address: "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
         },
     );
+
     map.insert(
         "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
         Contract {
@@ -229,6 +232,16 @@ async fn main() {
             decimals: 18,
             erc: ContractType::ERC20,
             address: "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
+        },
+    );
+
+    map.insert(
+        "0x32950db2a7164ae833121501c797d79e7b79d74c",
+        Contract {
+            name: "AXIE",
+            decimals: 0,
+            erc: ContractType::ERC20,
+            address: "0x32950db2a7164ae833121501c797d79e7b79d74c",
         },
     );
 
