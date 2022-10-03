@@ -250,7 +250,7 @@ async fn main() {
         "0x7d0556d55ca1a92708681e2e231733ebd922597d",
         Contract {
             name: "KATANA",
-            decimals: 0,
+            decimals: 18,
             erc: ContractType::ERC20,
             address: "0x7d0556d55ca1a92708681e2e231733ebd922597d",
         },
