@@ -16,6 +16,12 @@ const ERC_TRANSFER_TOPIC: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
 const MARKETPLACE_TREASURY_TOPIC: &str = "0x0000…616b";
+const DEX_TREASURY_TOPIC: &str = "0x0000…fa41";
+const WETH_CONTRACT_ADDRESS: &str = "0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5";
+const AXS_CONTRACT_ADDRESS: &str = "0x97a9107c1793bc407d6f527b77e7fff4d812bece";
+const SLP_CONTRACT_ADDRESS: &str = "0xa8754b9fa15fc18bb59458815510e40a12cd2014";
+const GATEWAY_CONTRACT_ADDRESS: &str = "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e";
+const AXIE_CONTRACT_ADDRESS: &str = "0x32950db2a7164ae833121501c797d79e7b79d74c";
 
 #[derive(Serialize, Deserialize)]
 pub struct Contract {
@@ -74,7 +80,6 @@ async fn scrape_block(
 
     for tx in block.transactions {
         if let Some(tx_to) = tx.to {
-            println!("{:?}", tx.to);
             let tx_to = to_string(&tx_to);
 
             if contracts_of_interest.contains(&tx_to.as_str()) {
@@ -96,7 +101,7 @@ async fn scrape_block(
                         // if it is an internal tx deposit into the treasury
                         // then parse the Log and deposit into influx
                         let topic = transfer.topics[2].to_string();
-                        if topic == MARKETPLACE_TREASURY_TOPIC {
+                        if topic == MARKETPLACE_TREASURY_TOPIC || topic == DEX_TREASURY_TOPIC {
                             let data = event
                                 .parse_log(RawLog {
                                     topics: transfer.to_owned().topics,
@@ -104,9 +109,13 @@ async fn scrape_block(
                                 })
                                 .unwrap();
 
+                            println!("{:?}, {:?}", topic, data);
+
                             let to = to_string(&data.params[1].value.to_string());
-                            if to != "a99cacd1427f493a95b585a5c7989a08c86a616b" {
-                                panic!("Not picking up the right treasury address @108");
+                            if to != "a99cacd1427f493a95b585a5c7989a08c86a616b"
+                                && to != "097faa854b87fdebb538f1892760ea1b4f31fa41"
+                            {
+                                panic!("Not picking up the right treasury address @115");
                             }
                             let from = to_string(&data.params[0].value.to_string());
 
@@ -127,9 +136,8 @@ async fn scrape_block(
                             // client.write(deets.name, stream::iter(q)).await;
                         }
 
-                        // else if the topic is not a deposit into the treasury
-                        // then simply aggregate all erc20 transfers but
-                        // throw out those that're interacting with the gateaway
+                        // else if the topic is not a deposit into the marketplace or dex treasury then simply
+                        // aggregate all ERC20 transfers but throw out those going to the treasuries
 
                         let data = event
                             .parse_log(RawLog {
@@ -139,7 +147,9 @@ async fn scrape_block(
                             .unwrap();
 
                         let to = to_string(&data.params[1].value.to_string());
-                        if to == "fff9ce5f71ca6178d3beecedb61e7eff1602950e" {
+                        if to == "fff9ce5f71ca6178d3beecedb61e7eff1602950e"
+                            || to == "7d0556d55ca1a92708681e2e231733ebd922597d"
+                        {
                             break;
                         }
                         let from = to_string(&data.params[0].value.to_string());
@@ -158,7 +168,7 @@ async fn scrape_block(
                             .field("value", value_float)
                             .build();
 
-                        client.write(deets.name, stream::iter(q)).await;
+                        // client.write(deets.name, stream::iter(q)).await;
                     }
                 } else {
                     println!("Null");
@@ -192,9 +202,10 @@ async fn main() {
         "0x97a9107c1793bc407d6f527b77e7fff4d812bece",
         "0xa8754b9fa15fc18bb59458815510e40a12cd2014",
         "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
-        "0x32950db2a7164ae833121501c797d79e7b79d74c",
+        "0x7d0556d55ca1a92708681e2e231733ebd922597d",
     ];
 
+    // the map is only used to pick up the name of the contract in writing to the db.
     map.insert(
         "0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5",
         Contract {
@@ -228,7 +239,7 @@ async fn main() {
     map.insert(
         "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
         Contract {
-            name: "TREASURY",
+            name: "GATEWAY",
             decimals: 18,
             erc: ContractType::ERC20,
             address: "0xfff9ce5f71ca6178d3beecedb61e7eff1602950e",
@@ -236,12 +247,12 @@ async fn main() {
     );
 
     map.insert(
-        "0x32950db2a7164ae833121501c797d79e7b79d74c",
+        "0x7d0556d55ca1a92708681e2e231733ebd922597d",
         Contract {
-            name: "AXIE",
+            name: "KATANA",
             decimals: 0,
             erc: ContractType::ERC20,
-            address: "0x32950db2a7164ae833121501c797d79e7b79d74c",
+            address: "0x7d0556d55ca1a92708681e2e231733ebd922597d",
         },
     );
 
