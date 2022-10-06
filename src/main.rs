@@ -1,6 +1,7 @@
 use crate::ContractType::ERC20;
 use dotenv::dotenv;
 use futures::future::join_all;
+use futures::stream;
 use influxdb2::{models::DataPoint, Client};
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -242,11 +243,6 @@ async fn main() {
         "metaportalweb@gmail.com",
         &INFLUXDB_TOKEN,
     );
-    let client = Client::new(
-        "https://us-east-1-1.aws.cloud2.influxdata.com",
-        "metaportalweb@gmail.com",
-    )
-    .with_auth("metaportalweb@gmail.com", &INFLUXDB_TOKEN);
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
