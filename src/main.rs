@@ -1,7 +1,7 @@
 use crate::ContractType::ERC20;
 use dotenv::dotenv;
 use futures::future::join_all;
-use futures::stream;
+use futures::stream::{self};
 use influxdb2::{models::DataPoint, Client};
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -92,141 +92,182 @@ async fn scrape_block(
                 // 2. get tx receipt and decipher to, from and value and fix decimals (AXS)
                 // 3. put into influxdb
 
-                let url = format!(
-                    "https://ronin.rest/ronin/getTransactionReceipt/{hash}",
-                    hash = to_string(&tx.hash)
-                );
+                let action = web3.eth().transaction_receipt(tx.hash).await.unwrap();
 
-                let ret = reqwest::get(url)
-                    .await
-                    .expect("Failed")
-                    .text()
-                    .await
-                    .unwrap();
+                if action.is_none() == false {
+                    let action_unwrapped = &action.unwrap();
 
-                let val_in_json: Value = serde_json::from_str(&ret).unwrap();
+                    if (action_unwrapped.logs.len() > 0) {
+                        let topics = &action_unwrapped.logs[0].topics;
 
-                let from = Value::as_str(val_in_json.get("from").unwrap()).unwrap();
-                let to: &str = &tx_to;
-                let value = val_in_json
-                    .get("logs")
-                    .and_then(|value| value.get(0).and_then(|value| value.get("data")))
-                    .unwrap()
-                    .to_string();
+                        if (topics.len() > 2) {
+                            if (to_string(&topics[2]) == "0x000000000000000000000000a99cacd1427f493a95b585a5c7989a08c86a616b"){
+                                // println!("{:?}", action_unwrapped.from);
+                                println!("{:?}", action_unwrapped);
 
-                // such a dirty way would prefer smth better.
-                let value_sliced = &value[52..67];
 
-                let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
+                                // str::from_utf8(&action_unwrapped.logs[0].data);
 
-                let mut value_float = u128::from_str_radix(&value_sliced, 16).unwrap() as f64;
-                let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
-                value_float = value_float / 10f64.powf(deets.decimals as f64);
+                                // let dec = &action_unwrapped.logs[0].data as u128
 
-                println!("{}, {}, {}", value_float, from, to);
 
-                let q = DataPoint::builder("value")
-                    .timestamp(timestamp * 1000 * 1000)
-                    .tag("from", from)
-                    .tag("to", to)
-                    .field("value", value_float)
-                    .build();
+                                // String::from_utf8(&action_unwrapped.logs[0].data.);
 
-                client.write(deets.name, stream::iter(q)).await;
-            } else {
-                if contracts_of_interest.contains(&tx_to.as_str()) {
-                    let action = web3.eth().transaction_receipt(tx.hash).await.unwrap();
 
-                    if action.is_none() == false {
-                        let receipt = action.unwrap();
-
-                        let transfer_log = receipt
-                            .logs
-                            .iter()
-                            .filter(|x| {
-                                to_string(&x.topics[0]) == ERC_TRANSFER_TOPIC
-                                    && contracts.contains(&to_string(&x.address).as_str())
-                            })
-                            .collect::<Vec<&Log>>();
-
-                        for transfer in transfer_log {
-                            // if it is an internal tx deposit into the treasury
-                            // then parse the Log and deposit into influx
-                            let topic = transfer.topics[2].to_string();
-                            if topic == MARKETPLACE_TREASURY_TOPIC || topic == DEX_TREASURY_TOPIC {
-                                let data = event
-                                    .parse_log(RawLog {
-                                        topics: transfer.to_owned().topics,
-                                        data: transfer.to_owned().data.0,
-                                    })
-                                    .unwrap();
-
-                                let to = to_string(&data.params[1].value.to_string());
-                                if to != "a99cacd1427f493a95b585a5c7989a08c86a616b"
-                                    && to != "097faa854b87fdebb538f1892760ea1b4f31fa41"
-                                {
-                                    panic!("Not picking up the right treasury address @115");
-                                }
-                                let from = to_string(&data.params[0].value.to_string());
-
-                                let value = to_string(&data.params[2].value.to_string());
-                                let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
-                                let mut value_float =
-                                    u128::from_str_radix(&value, 16).unwrap() as f64;
-                                let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
-                                value_float = value_float / 10f64.powf(deets.decimals as f64);
-
-                                let q = DataPoint::builder("value")
-                                    .timestamp(timestamp * 1000 * 1000)
-                                    .tag("from", from)
-                                    .tag("to", to)
-                                    .field("value", value_float)
-                                    .build();
-
-                                client.write(deets.name, stream::iter(q)).await;
-                            } else {
-                                // else if the topic is not a deposit into the marketplace or dex treasury then simply
-                                // aggregate all ERC20 transfers but throw out those going to the treasuries
-                                if transfer.address.to_string() == AXIE_CONTRACT_ADDRESS_SHORTENED {
-                                    break;
-                                }
-                                let data = event
-                                    .parse_log(RawLog {
-                                        topics: transfer.to_owned().topics,
-                                        data: transfer.to_owned().data.0,
-                                    })
-                                    .unwrap();
-
-                                let to = to_string(&data.params[1].value.to_string());
-                                if to == "fff9ce5f71ca6178d3beecedb61e7eff1602950e"
-                                    || to == "7d0556d55ca1a92708681e2e231733ebd922597d"
-                                {
-                                    break;
-                                }
-                                let from = to_string(&data.params[0].value.to_string());
-
-                                let value = to_string(&data.params[2].value.to_string());
-                                let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
-
-                                let mut value_float =
-                                    u128::from_str_radix(&value, 16).unwrap() as f64;
-                                let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
-                                value_float = value_float / 10f64.powf(deets.decimals as f64);
-
-                                let q = DataPoint::builder("value")
-                                    .timestamp(timestamp * 1000)
-                                    .tag("from", from)
-                                    .tag("to", to)
-                                    .field("value", value_float)
-                                    .build();
-
-                                client.write(deets.name, stream::iter(q)).await;
                             }
                         }
-                    } else {
-                        println!("Null");
                     }
-                };
+
+                    // let mut breakloop = false;
+
+                    // for topic in receipt.iter() {
+                    //     if topic.topics.len() < 3 {
+                    //         breakloop = true;
+                    //         break;
+                    //     } else if to_string(&topic.topics[2])
+                    //         != "0x000000000000000000000000a99cacd1427f493a95b585a5c7989a08c86a616b"
+                    //     {
+                    //         breakloop = true;
+                    //         break;
+                    //     };
+                    // }
+
+                    // if breakloop == true {
+                    //     break;
+                    // }
+
+                    // let from = &action_unwrapped.from.to_string();
+                    // let to: &str = &tx_to;
+                    // println!("{}, {}", from, to);
+
+                    // let value = val_in_json
+                    //     .get("logs")
+                    //     .and_then(|value| value.get(0).and_then(|value| value.get("data")))
+                    //     .unwrap()
+                    //     .to_string();
+
+                    // // // such a dirty way would prefer smth better.
+                    // let value_sliced = &value[52..67];
+
+                    // let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
+
+                    // let mut value_float = u128::from_str_radix(&value_sliced, 16).unwrap() as f64;
+                    // let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
+                    // value_float = value_float / 10f64.powf(deets.decimals as f64);
+
+                    // let q = DataPoint::builder("value")
+                    //     .timestamp(timestamp * 1000 * 1000)
+                    //     .tag("from", from)
+                    //     .tag("to", to)
+                    //     .field("value", value_float)
+                    //     .build();
+
+                    // println!("{}, {}, {}", from, to, value_float);
+
+                    // client.write(deets.name, stream::iter(q)).await;
+                } else {
+                    if contracts_of_interest.contains(&tx_to.as_str()) {
+                        let action = web3.eth().transaction_receipt(tx.hash).await.unwrap();
+
+                        if action.is_none() == false {
+                            let receipt = action.unwrap();
+
+                            let transfer_log = receipt
+                                .logs
+                                .iter()
+                                .filter(|x| {
+                                    to_string(&x.topics[0]) == ERC_TRANSFER_TOPIC
+                                        && contracts.contains(&to_string(&x.address).as_str())
+                                })
+                                .collect::<Vec<&Log>>();
+
+                            for transfer in transfer_log {
+                                // if it is an internal tx deposit into the treasury
+                                // then parse the Log and deposit into influx
+                                let topic = transfer.topics[2].to_string();
+                                if topic == MARKETPLACE_TREASURY_TOPIC
+                                    || topic == DEX_TREASURY_TOPIC
+                                {
+                                    let data = event
+                                        .parse_log(RawLog {
+                                            topics: transfer.to_owned().topics,
+                                            data: transfer.to_owned().data.0,
+                                        })
+                                        .unwrap();
+
+                                    let to = to_string(&data.params[1].value.to_string());
+                                    if to != "a99cacd1427f493a95b585a5c7989a08c86a616b"
+                                        && to != "097faa854b87fdebb538f1892760ea1b4f31fa41"
+                                    {
+                                        panic!("Not picking up the right treasury address");
+                                    }
+                                    let from = to_string(&data.params[0].value.to_string());
+
+                                    let value = to_string(&data.params[2].value.to_string());
+                                    let timestamp =
+                                        block.timestamp.to_string().parse::<i64>().unwrap();
+                                    let mut value_float =
+                                        u128::from_str_radix(&value, 16).unwrap() as f64;
+                                    let deets =
+                                        map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
+                                    value_float = value_float / 10f64.powf(deets.decimals as f64);
+
+                                    let q = DataPoint::builder("value")
+                                        .timestamp(timestamp * 1000 * 1000)
+                                        .tag("from", from)
+                                        .tag("to", to)
+                                        .field("value", value_float)
+                                        .build();
+
+                                    client.write(deets.name, stream::iter(q)).await;
+                                } else {
+                                    // else if the topic is not a deposit into the marketplace or dex treasury then simply
+                                    // aggregate all ERC20 transfers but throw out those going to the treasuries
+                                    if transfer.address.to_string()
+                                        == AXIE_CONTRACT_ADDRESS_SHORTENED
+                                    {
+                                        break;
+                                    }
+                                    let data = event
+                                        .parse_log(RawLog {
+                                            topics: transfer.to_owned().topics,
+                                            data: transfer.to_owned().data.0,
+                                        })
+                                        .unwrap();
+
+                                    let to = to_string(&data.params[1].value.to_string());
+                                    if to == "fff9ce5f71ca6178d3beecedb61e7eff1602950e"
+                                        || to == "7d0556d55ca1a92708681e2e231733ebd922597d"
+                                    {
+                                        break;
+                                    }
+                                    let from = to_string(&data.params[0].value.to_string());
+
+                                    let value = to_string(&data.params[2].value.to_string());
+                                    let timestamp =
+                                        block.timestamp.to_string().parse::<i64>().unwrap();
+
+                                    let mut value_float =
+                                        u128::from_str_radix(&value, 16).unwrap() as f64;
+                                    let deets =
+                                        map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
+                                    value_float = value_float / 10f64.powf(deets.decimals as f64);
+
+                                    let q = DataPoint::builder("value")
+                                        .timestamp(timestamp * 1000)
+                                        .tag("from", from)
+                                        .tag("to", to)
+                                        .field("value", value_float)
+                                        .build();
+
+                                    client.write(deets.name, stream::iter(q)).await;
+                                }
+                            }
+                        } else {
+                            println!("Null");
+                        }
+                    };
+                }
             }
         }
     }
