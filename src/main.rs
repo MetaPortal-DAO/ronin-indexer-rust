@@ -96,26 +96,43 @@ async fn scrape_block(
                     hash = tx.hash
                 );
 
-                let ret = reqwest::get("https://ronin.rest/ronin/getTransactionReceipt/0xc36c7f5743b0690ec1644c09f924ae01c08443f336ba744e18205f8a4d77f5eb").await.expect("Failed").bytes().await.unwrap();
-                let val = str::from_utf8(&ret).unwrap();
-                let val_in_json: Value = serde_json::from_str(val).unwrap();
+                let url2: &str =
+                    "https://ronin.rest/ronin/getTransactionReceipt/0xc36c7f5743b0690ec1644c09f924ae01c08443f336ba744e18205f8a4d77f5eb";
 
-                let from = 0;
-                let to = 0;
-                let value = val_in_json.get("topics").unwrap();
-                println!("{:?}", value);
+                let ret = reqwest::get(url2)
+                    .await
+                    .expect("Failed")
+                    .text()
+                    .await
+                    .unwrap();
 
-                // let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
-                // let mut value_float = u128::from_str_radix(&value, 16).unwrap() as f64;
-                // let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
-                // value_float = value_float / 10f64.powf(deets.decimals as f64);
+                let val_in_json: Value = serde_json::from_str(&ret).unwrap();
 
-                // let q = DataPoint::builder("value")
-                //     .timestamp(timestamp * 1000 * 1000)
-                //     .tag("from", from)
-                //     .tag("to", to)
-                //     .field("value", value_float)
-                //     .build();
+                let from = Value::as_str(val_in_json.get("from").unwrap()).unwrap();
+                let to: &str = &tx_to;
+                let value = val_in_json
+                    .get("logs")
+                    .and_then(|value| value.get(0).and_then(|value| value.get("data")))
+                    .unwrap()
+                    .to_string();
+
+                // such a dirty way would prefer smth better.
+                let value_sliced = &value[52..67];
+
+                let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
+
+                let mut value_float = u128::from_str_radix(&value_sliced, 16).unwrap() as f64;
+                let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
+                value_float = value_float / 10f64.powf(deets.decimals as f64);
+
+                println!("{}, {}, {}", value_float, from, to);
+
+                let q = DataPoint::builder("value")
+                    .timestamp(timestamp * 1000 * 1000)
+                    .tag("from", from)
+                    .tag("to", to)
+                    .field("value", value_float)
+                    .build();
 
                 // client.write(deets.name, stream::iter(q)).await;
             } else {
@@ -156,7 +173,6 @@ async fn scrape_block(
 
                                 let value = to_string(&data.params[2].value.to_string());
                                 let timestamp = block.timestamp.to_string().parse::<i64>().unwrap();
-
                                 let mut value_float =
                                     u128::from_str_radix(&value, 16).unwrap() as f64;
                                 let deets = map.get(&tx_to.clone().to_lowercase() as &str).unwrap();
