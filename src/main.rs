@@ -93,13 +93,10 @@ async fn scrape_block(
 
                 let url = format!(
                     "https://ronin.rest/ronin/getTransactionReceipt/{hash}",
-                    hash = tx.hash
+                    hash = to_string(&tx.hash)
                 );
 
-                let url2: &str =
-                    "https://ronin.rest/ronin/getTransactionReceipt/0xc36c7f5743b0690ec1644c09f924ae01c08443f336ba744e18205f8a4d77f5eb";
-
-                let ret = reqwest::get(url2)
+                let ret = reqwest::get(url)
                     .await
                     .expect("Failed")
                     .text()
@@ -134,7 +131,7 @@ async fn scrape_block(
                     .field("value", value_float)
                     .build();
 
-                // client.write(deets.name, stream::iter(q)).await;
+                client.write(deets.name, stream::iter(q)).await;
             } else {
                 if contracts_of_interest.contains(&tx_to.as_str()) {
                     let action = web3.eth().transaction_receipt(tx.hash).await.unwrap();
@@ -185,7 +182,7 @@ async fn scrape_block(
                                     .field("value", value_float)
                                     .build();
 
-                                // client.write(deets.name, stream::iter(q)).await;
+                                client.write(deets.name, stream::iter(q)).await;
                             } else {
                                 // else if the topic is not a deposit into the marketplace or dex treasury then simply
                                 // aggregate all ERC20 transfers but throw out those going to the treasuries
@@ -222,7 +219,7 @@ async fn scrape_block(
                                     .field("value", value_float)
                                     .build();
 
-                                // client.write(deets.name, stream::iter(q)).await;
+                                client.write(deets.name, stream::iter(q)).await;
                             }
                         }
                     } else {
@@ -245,7 +242,11 @@ async fn main() {
         "metaportalweb@gmail.com",
         &INFLUXDB_TOKEN,
     );
-    // let client = Client::new("https://us-east-1-1.aws.cloud2.influxdata.com", "metaportalweb@gmail.com").with_auth("metaportalweb@gmail.com", &INFLUXDB_TOKEN);
+    let client = Client::new(
+        "https://us-east-1-1.aws.cloud2.influxdata.com",
+        "metaportalweb@gmail.com",
+    )
+    .with_auth("metaportalweb@gmail.com", &INFLUXDB_TOKEN);
 
     let provider = web3::transports::WebSocket::new(&PROVIDER_URL)
         .await
