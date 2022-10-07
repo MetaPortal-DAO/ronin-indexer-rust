@@ -1,2 +1,1 @@
-1. Add AXS transfers to marketplace treasury 
-2. Add DEX treasury transfers interacting with katana
+1. make from, to, value and writes a function to clean up code
