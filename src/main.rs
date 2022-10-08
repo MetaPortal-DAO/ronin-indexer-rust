@@ -123,7 +123,7 @@ async fn scrape_block(
                                 value_float = value_float / 10f64.powf(deets.decimals as f64);
 
                                 let q = DataPoint::builder("value")
-                                    .timestamp(timestamp * 1000 * 1000)
+                                    .timestamp(timestamp * 1000 * 1000 * 1000)
                                     .tag("from", from)
                                     .tag("to", to)
                                     .field("value", value_float)
@@ -137,7 +137,6 @@ async fn scrape_block(
             } else {
                 if contracts_of_interest.contains(&tx_to.as_str()) {
                     let action = web3.eth().transaction_receipt(tx.hash).await.unwrap();
-
                     if action.is_none() == false {
                         let receipt = action.unwrap();
 
@@ -178,7 +177,7 @@ async fn scrape_block(
                                 value_float = value_float / 10f64.powf(deets.decimals as f64);
 
                                 let q = DataPoint::builder("value")
-                                    .timestamp(timestamp * 1000 * 1000)
+                                    .timestamp(timestamp * 1000 * 1000 * 1000)
                                     .tag("from", from)
                                     .tag("to", to)
                                     .field("value", value_float)
@@ -215,7 +214,7 @@ async fn scrape_block(
                                 value_float = value_float / 10f64.powf(deets.decimals as f64);
 
                                 let q = DataPoint::builder("value")
-                                    .timestamp(timestamp * 1000)
+                                    .timestamp(timestamp * 1000 * 1000 * 1000)
                                     .tag("from", from)
                                     .tag("to", to)
                                     .field("value", value_float)
